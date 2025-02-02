@@ -44,7 +44,7 @@ impl NetworkController {
 
     pub fn flood_network(&self) {
         let mut rng = rand::rng();
-        let session_id: u64 = rng.random(); // TODO: decide if this is needed
+        let _session_id: u64 = rng.random(); // TODO: decide if this is needed
         let flood_id: u64 = rng.random();
 
         let flood_request = FloodRequest::initialize(flood_id, self.node_id, self.node_type);
@@ -56,7 +56,7 @@ impl NetworkController {
         self.network_graph.read().unwrap().get_path_to(to)
     }
 
-    pub fn update_from_flood_response(&self, flood_response: FloodResponse) {
+    pub fn update_from_flood_response(&self, flood_response: &FloodResponse) {
         self.network_graph.read().unwrap().insert_edges_from_path_trace(&flood_response.path_trace);
 
         self.send_known_network_graph();
@@ -101,7 +101,7 @@ impl NetworkController {
                 let mut neighbors: Vec<NodeId> = vec![];
 
                 for neighbor in network_node.neighbors.read().unwrap().iter() {
-                    neighbors.push(*neighbor)
+                    neighbors.push(*neighbor);
                 }
 
                 neighbors
@@ -189,7 +189,7 @@ mod tests {
                 (3, NodeType::Client),
             ],
         };
-        network_controller.update_from_flood_response(flood_response);
+        network_controller.update_from_flood_response(&flood_response);
         let flood_response = FloodResponse {
             flood_id: 0,
             path_trace: vec![
@@ -199,7 +199,7 @@ mod tests {
                 (8, NodeType::Server),
             ],
         };
-        network_controller.update_from_flood_response(flood_response);
+        network_controller.update_from_flood_response(&flood_response);
         let flood_response = FloodResponse {
             flood_id: 0,
             path_trace: vec![
@@ -208,7 +208,7 @@ mod tests {
                 (8, NodeType::Server),
             ],
         };
-        network_controller.update_from_flood_response(flood_response);
+        network_controller.update_from_flood_response(&flood_response);
 
         let hops = network_controller.get_path(8);
         let expected = Some(vec![0, 1, 8]);
@@ -259,7 +259,7 @@ mod tests {
                 (3, NodeType::Client),
             ],
         };
-        network_controller.update_from_flood_response(flood_response);
+        network_controller.update_from_flood_response(&flood_response);
 
         let flood_response = FloodResponse {
             flood_id: 0,
@@ -270,7 +270,7 @@ mod tests {
                 (3, NodeType::Client),
             ],
         };
-        network_controller.update_from_flood_response(flood_response);
+        network_controller.update_from_flood_response(&flood_response);
 
         let nack = Nack {
             fragment_index: 0,
@@ -376,7 +376,7 @@ mod tests {
             ],
         };
 
-        network_controller.update_from_flood_response(flood_response);
+        network_controller.update_from_flood_response(&flood_response);
 
         let nack = Nack {
             fragment_index: 0,

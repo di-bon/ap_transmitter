@@ -10,7 +10,6 @@ use crate::transmitter::network_controller::NetworkController;
 /// finding an appropriate `SourceRoutingHeader`
 pub struct SinglePacketTransmissionHandler {
     packet_type: PacketType,
-    source_id: NodeId,
     session_id: u64,
     gateway: Arc<Gateway>,
     network_controller: Arc<NetworkController>,
@@ -19,8 +18,8 @@ pub struct SinglePacketTransmissionHandler {
 
 impl SinglePacketTransmissionHandler {
     /// Returns a new instance of `SinglePacketTransmissionHandler`
-    pub fn new(packet_type: PacketType, source_id: NodeId, session_id: u64, gateway: Arc<Gateway>, network_controller: Arc<NetworkController>, backoff_time: Duration) -> Self {
-        Self { packet_type, source_id, session_id, gateway, network_controller, backoff_time }
+    pub fn new(packet_type: PacketType, session_id: u64, gateway: Arc<Gateway>, network_controller: Arc<NetworkController>, backoff_time: Duration) -> Self {
+        Self { packet_type, session_id, gateway, network_controller, backoff_time }
     }
 
     /// Sends a `Packet` to its `destination`
@@ -46,9 +45,8 @@ impl SinglePacketTransmissionHandler {
                     hops,
                 };
                 return source_routing_header;
-            } else {
-                thread::sleep(self.backoff_time);
             }
+            thread::sleep(self.backoff_time);
         }
     }
 }

@@ -31,8 +31,7 @@ impl PartialEq for NetworkGraph {
             }
         }
 
-        self.owner_node_id == other.owner_node_id
-            && self.owner_node_type == other.owner_node_type
+        self.owner_node_id == other.owner_node_id && self.owner_node_type == other.owner_node_type
     }
 }
 
@@ -40,10 +39,7 @@ impl Eq for NetworkGraph {}
 
 impl NetworkGraph {
     /// Returns a new instance of `NetworkGraph`
-    pub(super) fn new(
-        owner_node_id: NodeId,
-        owner_node_type: NodeType,
-    ) -> Self {
+    pub(super) fn new(owner_node_id: NodeId, owner_node_type: NodeType) -> Self {
         let result = Self {
             owner_node_id,
             owner_node_type,
@@ -64,12 +60,13 @@ impl NetworkGraph {
         log::info!("Inserted node with NodeId {node_id}");
     }
 
-    /// Inserts a new node with into `NetworkGraph` if there is no node with the required node_id: NodeId`
+    /// Inserts a new node with into `NetworkGraph` if there is no node with the required `node_id: NodeId`
     fn insert_node_if_not_present(&self, node_id: NodeId, node_type: NodeType) {
         let insert_node = {
             let nodes = self.nodes.read().unwrap();
             !nodes
-                .iter().any(|node| node.read().unwrap().node_id == node_id)
+                .iter()
+                .any(|node| node.read().unwrap().node_id == node_id)
         };
 
         if insert_node {
@@ -79,35 +76,48 @@ impl NetworkGraph {
 
     // TODO: refactor this
     fn remove_node_from_neighbors(&self, remove_connections_from: NodeId) {
-        let nodes_binding = self
-            .nodes
-            .read()
-            .unwrap();
-        let node_to_be_removed = match nodes_binding
+        let nodes_binding = self.nodes.read().unwrap();
+        let Some(node_to_be_removed) = nodes_binding
             .iter()
-            .find(|node| node.read().unwrap().node_id == remove_connections_from) {
-            Some(node) => node,
-            None => {
-                log::error!("Cannot find node with NodeId {remove_connections_from}");
-                panic!("Cannot find node with NodeId {remove_connections_from}");
-            }
+            .find(|node| node.read().unwrap().node_id == remove_connections_from)
+        else {
+            log::error!("Cannot find node with NodeId {remove_connections_from}");
+            panic!("Cannot find node with NodeId {remove_connections_from}");
         };
 
-        for neighbor_id in node_to_be_removed.read().unwrap().neighbors.read().unwrap().iter() {
-            let neighbor = match nodes_binding
+        for neighbor_id in node_to_be_removed
+            .read()
+            .unwrap()
+            .neighbors
+            .read()
+            .unwrap()
+            .iter()
+        {
+            let Some(neighbor) = nodes_binding
                 .iter()
-                .find(|node| node.read().unwrap().node_id == *neighbor_id) {
-                Some(node) => node,
-                None => {
-                    // continue?
-                    continue;
-                }
+                .find(|node| node.read().unwrap().node_id == *neighbor_id)
+            else {
+                // continue?
+                continue;
             };
-            let index = match neighbor.read().unwrap().neighbors.write().unwrap().iter().position(|node_id| *node_id == remove_connections_from) {
-                Some(index) => index,
-                None => panic!("Node not found"),
-            };
-            neighbor.read().unwrap().neighbors.write().unwrap().remove(index);
+
+            let Some(index) = neighbor
+                .read()
+                .unwrap()
+                .neighbors
+                .write()
+                .unwrap()
+                .iter()
+                .position(|node_id| *node_id == remove_connections_from)
+            else { panic!("Node not found") };
+
+            neighbor
+                .read()
+                .unwrap()
+                .neighbors
+                .write()
+                .unwrap()
+                .remove(index);
         }
     }
 
@@ -138,27 +148,24 @@ impl NetworkGraph {
     /// Inserts a bidirectional edge between a and b
     fn insert_bidirectional_edge(&self, a: NodeId, b: NodeId) {
         let nodes = self.nodes.read().unwrap();
-        let node_a = match nodes.iter().find(|node| node.read().unwrap().node_id == a) {
-            Some(node) => node,
-            None => {
-                log::error!("Node 'a' with node_id {a} does not exist");
-                panic!("Node 'a' with node_id {a} does not exist");
-            },
+
+        let Some(node_a) = nodes.iter().find(|node| node.read().unwrap().node_id == a) else {
+            log::error!("Node 'a' with node_id {a} does not exist");
+            panic!("Node 'a' with node_id {a} does not exist");
         };
-        let node_b = match nodes.iter().find(|node| node.read().unwrap().node_id == b) {
-            Some(node) => node,
-            None => {
-                log::error!("Node with node_id {b} does not exist");
-                panic!("Node with node_id {b} does not exist");
-            },
+
+        let Some(node_b) = nodes.iter().find(|node| node.read().unwrap().node_id == b) else {
+            log::error!("Node with node_id {b} does not exist");
+            panic!("Node with node_id {b} does not exist");
         };
+
         node_a.write().unwrap().insert_edge(b);
         node_b.write().unwrap().insert_edge(a);
     }
 
     pub fn insert_edges_from_path_trace(&self, path_trace: &[(NodeId, NodeType)]) {
         log::info!("Processing FloodResponse's path_trace");
-        for (node_id, node_type) in path_trace.iter() {
+        for (node_id, node_type) in path_trace {
             self.insert_node_if_not_present(*node_id, *node_type);
         }
 
@@ -190,8 +197,8 @@ impl NetworkGraph {
     pub(super) fn increment_num_of_dropped_packets(&self, node_id: NodeId) {
         use wg_2024::packet::NackType;
 
-        let borrow_mut = self.nodes.write().unwrap();
-        let faulty_node = borrow_mut
+        let borrow = self.nodes.read().unwrap();
+        let faulty_node = borrow
             .iter()
             .find(|node| node.read().unwrap().node_id == node_id);
         match faulty_node {
@@ -202,31 +209,32 @@ impl NetworkGraph {
                 // just ignore this case?
                 // It may arise when an old Nack::Dropped is received after resetting the
                 // graph and flooding it again
-                log::info!("Ignoring old {:?}: graph has already been reset", NackType::Dropped);
+                log::info!(
+                    "Ignoring old {:?}: graph has already been reset",
+                    NackType::Dropped
+                );
             }
         }
     }
 
     pub fn get_num_of_dropped_packets(&self, node_id: NodeId) -> Option<u64> {
-        let borrow_mut = self.nodes.write().unwrap();
-        let faulty_node = borrow_mut
+        let borrow = self.nodes.read().unwrap();
+        let faulty_node = borrow
             .iter()
             .find(|node| node.read().unwrap().node_id == node_id);
-        match faulty_node {
-            Some(node) => {
-                Some(node.write().unwrap().get_num_of_dropped_packets())
-            }
-            None => {
-                // just ignore this case?
-                // It may arise when an old Nack::Dropped is received after resetting the
-                // graph and flooding it again
-                log::info!("No node with NodeId {node_id}");
-                None
-            }
+
+        if let Some(node) = faulty_node {
+            Some(node.write().unwrap().get_num_of_dropped_packets())
+        } else {
+            // just ignore this case?
+            // It may arise when an old Nack::Dropped is received after resetting the
+            // graph and flooding it again
+            log::info!("No node with NodeId {node_id}");
+            None
         }
     }
 
-    /// Returns an HashMap associating every node to its predecessor
+    /// Returns an `HashMap` associating every node to its predecessor
     fn get_paths(&self) -> HashMap<NodeId, NodeId> {
         let mut come_from: HashMap<NodeId, NodeId> = HashMap::new();
         let mut to_be_examined: Vec<NodeId> = Vec::new();
@@ -240,15 +248,14 @@ impl NetworkGraph {
             to_be_examined.remove(0);
 
             let borrow = self.nodes.read().unwrap();
-            let current_node = match borrow
+            let Some(current_node) = borrow
                 .iter()
                 .find(|node| node.read().unwrap().node_id == current_node_id)
-            {
-                Some(node) => node,
-                None => {
-                    log::error!("Cannot get node with NodeId {current_node_id} while getting min paths");
-                    panic!("Cannot get node with NodeId {current_node_id} while getting min paths");
-                },
+            else {
+                log::error!(
+                    "Cannot get node with NodeId {current_node_id} while getting min paths"
+                );
+                panic!("Cannot get node with NodeId {current_node_id} while getting min paths");
             };
 
             if current_node.read().unwrap().node_type != NodeType::Drone
@@ -257,12 +264,13 @@ impl NetworkGraph {
                 continue;
             }
 
-            let current_cost = match costs.get(&current_node_id) {
-                Some(cost) => *cost,
-                None => {
-                    log::error!("Cannot get node's cost with NodeId {current_node_id} while getting min paths");
-                    panic!("Cannot get node's cost with NodeId {current_node_id} while getting min paths");
-                },
+            let Some(current_cost) = costs.get(&current_node_id).copied() else {
+                log::error!(
+                    "Cannot get node's cost with NodeId {current_node_id} while getting min paths"
+                );
+                panic!(
+                    "Cannot get node's cost with NodeId {current_node_id} while getting min paths"
+                );
             };
 
             for neighbor_node_id in current_node
@@ -280,15 +288,14 @@ impl NetworkGraph {
 
                 let neighbor = {
                     let binding = self.nodes.read().unwrap();
-                    match binding
+                    if let Some(node) = binding
                         .iter()
                         .find(|node| node.read().unwrap().node_id == *neighbor_node_id)
                     {
-                        Some(node) => node.clone(),
-                        None => {
-                            log::error!("Cannot find neighbor with NodeId {neighbor_node_id} for current node {current_node_id}");
-                            panic!("Cannot find neighbor with NodeId {neighbor_node_id} for current node {current_node_id}");
-                        },
+                        node.clone()
+                    } else {
+                        log::error!("Cannot find neighbor with NodeId {neighbor_node_id} for current node {current_node_id}");
+                        panic!("Cannot find neighbor with NodeId {neighbor_node_id} for current node {current_node_id}");
                     }
                 };
 
@@ -695,24 +702,28 @@ mod tests {
 
         let flood_response = FloodResponse {
             flood_id: 0,
-            path_trace: vec![
-                (node_id, node_type),
-                (1, NodeType::Drone),
-            ],
+            path_trace: vec![(node_id, node_type), (1, NodeType::Drone)],
         };
 
         graph.insert_edges_from_path_trace(&flood_response.path_trace);
 
         let owner_node = create_arc_rwlock_node(node_id, node_type);
-        owner_node.write().unwrap().neighbors.write().unwrap().push(1);
+        owner_node
+            .write()
+            .unwrap()
+            .neighbors
+            .write()
+            .unwrap()
+            .push(1);
         let drone_1 = create_arc_rwlock_node(1, NodeType::Drone);
-        drone_1.write().unwrap().neighbors.write().unwrap().push(node_id);
-        let nodes = RwLock::new(
-            vec![
-                owner_node,
-                drone_1,
-            ]
-        );
+        drone_1
+            .write()
+            .unwrap()
+            .neighbors
+            .write()
+            .unwrap()
+            .push(node_id);
+        let nodes = RwLock::new(vec![owner_node, drone_1]);
         let expected = NetworkGraph {
             owner_node_id: node_id,
             owner_node_type: node_type,
