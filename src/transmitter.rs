@@ -17,6 +17,30 @@ mod gateway;
 mod transmission_handler;
 mod single_packet_transmission_handler;
 
+#[derive(Debug)]
+pub struct Transmitter {
+    node_id: NodeId,
+    listener_rx: Receiver<LogicCommand>,
+    gateway_to_transmitter_rx: Receiver<LogicCommand>,
+    server_logic_rx: Receiver<Message>,
+    network_controller: Arc<NetworkController>,
+    transmission_handlers: HashMap<u64, Sender<TransmissionHandlerCommand>>,
+    transmission_handler_event_rx: Receiver<TransmissionHandlerEvent>,
+    transmission_handler_event_tx: Sender<TransmissionHandlerEvent>,
+    gateway: Arc<Gateway>,
+    simulation_controller_notifier: Arc<SimulationControllerNotifier>,
+    transmitter_command_rx: Receiver<Command>,
+}
+
+impl PartialEq for Transmitter {
+    fn eq(&self, other: &Self) -> bool {
+        self.node_id == other.node_id
+            && self.network_controller == other.network_controller
+            && self.transmission_handlers.keys().eq(other.transmission_handlers.keys())
+            && self.gateway.eq(&other.gateway)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TransmissionHandlerCommand {
     Resend(u64),
@@ -40,32 +64,9 @@ pub enum LogicCommand {
     SendNack { session_id: u64, nack: Nack, destination: NodeId },
 }
 
+#[derive(Debug, Clone)]
 pub enum Command {
     Quit
-}
-
-#[derive(Debug)]
-pub struct Transmitter {
-    node_id: NodeId,
-    listener_rx: Receiver<LogicCommand>,
-    gateway_to_transmitter_rx: Receiver<LogicCommand>,
-    server_logic_rx: Receiver<Message>,
-    network_controller: Arc<NetworkController>,
-    transmission_handlers: HashMap<u64, Sender<TransmissionHandlerCommand>>,
-    transmission_handler_event_rx: Receiver<TransmissionHandlerEvent>,
-    transmission_handler_event_tx: Sender<TransmissionHandlerEvent>,
-    gateway: Arc<Gateway>,
-    simulation_controller_notifier: Arc<SimulationControllerNotifier>,
-    transmitter_command_rx: Receiver<Command>,
-}
-
-impl PartialEq for Transmitter {
-    fn eq(&self, other: &Self) -> bool {
-        self.node_id == other.node_id
-            && self.network_controller == other.network_controller
-            && self.transmission_handlers.keys().eq(other.transmission_handlers.keys())
-            && self.gateway.eq(&other.gateway)
-    }
 }
 
 impl Transmitter {
@@ -129,7 +130,6 @@ impl Transmitter {
                 recv(self.listener_rx) -> command => {
                     if let Ok(command) = command {
                         self.process_logic_command(command);
-                        // self.process_listener_packet(packet);
                     } else {
                         panic!("Error while receiving from listener_channel");
                     }
@@ -142,12 +142,6 @@ impl Transmitter {
                     }
                 },
                 recv(self.server_logic_rx) -> message_data => {
-                    // to send a server logic message, create a new session_id, pass the high level
-                    // message to a new transmission_handler, store a reference to that transmission
-                    // handler in a hashmap containing the session_id as the key
-                    // The transmission handler will handler the fragmentation by using the assembler
-                    // The reference to the transmission handler will be removed when the
-                    // transmission_handler will have received every ACK message
                     if let Ok(message) = message_data {
                         self.process_high_level_message(message);
                     } else {
@@ -179,9 +173,12 @@ impl Transmitter {
             Duration::from_millis(2000),
         );
 
-        thread::spawn(move || {
-            transmission_handler.run();
-        });
+        thread::Builder::new()
+            .name(format!("transmission_handler_{session_id}"))
+            .spawn(move || {
+                transmission_handler.run();
+            })
+            .unwrap();
 
         self.transmission_handlers.insert(session_id, command_tx);
     }
@@ -247,9 +244,12 @@ impl Transmitter {
                     Duration::from_millis(2000),
                 );
 
-                thread::spawn(move || {
-                    handler.send_packet(destination);
-                });
+                thread::Builder::new()
+                    .name(format!("single_packet_transmission_handler_{session_id}"))
+                    .spawn(move || {
+                        handler.send_packet(destination);
+                    })
+                    .unwrap();
             }
             LogicCommand::ForwardAckTo { session_id, ack, source } => {
                 let command = TransmissionHandlerCommand::Confirmed(ack.fragment_index);
@@ -269,9 +269,12 @@ impl Transmitter {
                     Duration::from_millis(2000),
                 );
 
-                thread::spawn(move || {
-                    handler.send_packet(destination);
-                });
+                thread::Builder::new()
+                    .name(format!("single_packet_transmission_handler_{session_id}"))
+                    .spawn(move || {
+                        handler.send_packet(destination);
+                    })
+                    .unwrap();
             }
             LogicCommand::ProcessFloodRequest(flood_request) => {
                 // if a flood request is received, send a flood_response
