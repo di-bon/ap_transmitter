@@ -187,9 +187,9 @@ mod tests {
     use messages::TextResponse::Text;
     use ntest::timeout;
     use wg_2024::packet::{FloodResponse, NodeType, Packet, PacketType};
-    use crate::transmitter::LogicCommand;
+    use crate::transmitter::PacketCommand;
 
-    fn create_transmission_handler(message: &Message, node_id: NodeId, node_type: NodeType, destination_node_id: NodeId, paths: Vec<FloodResponse>, backoff_time: Duration) -> (TransmissionHandler, Receiver<Packet>, Receiver<NodeEvent>, Sender<TransmissionHandlerCommand>, Receiver<LogicCommand>) {
+    fn create_transmission_handler(message: &Message, node_id: NodeId, node_type: NodeType, destination_node_id: NodeId, paths: Vec<FloodResponse>, backoff_time: Duration) -> (TransmissionHandler, Receiver<Packet>, Receiver<NodeEvent>, Sender<TransmissionHandlerCommand>, Receiver<PacketCommand>) {
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
         let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);

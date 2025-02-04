@@ -11,14 +11,14 @@ use messages::node_event::NodeEvent;
 use ntest::timeout;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
-use ap_transmitter::{Transmitter, Command, LogicCommand};
+use ap_transmitter::{Transmitter, Command, PacketCommand};
 
 pub fn create_transmitter(
     node_id: NodeId,
     node_type: NodeType,
     connected_drones: HashMap<NodeId, Sender<Packet>>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
-) -> (Transmitter, Sender<LogicCommand>, Sender<Message>, Sender<Command>) {
+) -> (Transmitter, Sender<PacketCommand>, Sender<Message>, Sender<Command>) {
 
     let (listener_to_transmitter_tx, listener_to_transmitter_rx) = unbounded();
     let (logic_to_transmitter_tx, logic_to_transmitter_rx) = unbounded();
@@ -123,7 +123,7 @@ fn check_message_handling_and_forwarding() {
     //     pack_type: PacketType::FloodResponse(flood_response),
     // };
 
-    let command = LogicCommand::ProcessFloodResponse(flood_response);
+    let command = PacketCommand::ProcessFloodResponse(flood_response);
 
     listener_to_transmitter_tx.send(command).expect("Listener cannot communicate with transmitter");
 
@@ -191,7 +191,7 @@ fn check_message_handling_and_forwarding() {
 
         let source = expected_packet.routing_header.source().unwrap();
 
-        let command = LogicCommand::ForwardAckTo {
+        let command = PacketCommand::ForwardAckTo {
             session_id,
             ack,
             source,
@@ -253,7 +253,7 @@ fn check_unexpected_ack() {
         ],
     };
 
-    let command = LogicCommand::ProcessFloodResponse(flood_response);
+    let command = PacketCommand::ProcessFloodResponse(flood_response);
 
     listener_to_transmitter_tx.send(command).expect("Listener cannot communicate with transmitter");
 
@@ -266,7 +266,7 @@ fn check_unexpected_ack() {
 
     let session_id = 10;
 
-    let command = LogicCommand::ForwardAckTo {
+    let command = PacketCommand::ForwardAckTo {
         session_id,
         ack,
         source: 1,
@@ -343,7 +343,7 @@ fn check_flood_request_processing() {
     //     pack_type: PacketType::FloodResponse(flood_response),
     // };
 
-    let command = LogicCommand::ProcessFloodResponse(flood_response);
+    let command = PacketCommand::ProcessFloodResponse(flood_response);
 
     listener_to_transmitter_tx.send(command).expect("Listener cannot communicate with transmitter");
 
@@ -367,7 +367,7 @@ fn check_flood_request_processing() {
     //     pack_type: PacketType::FloodRequest(flood_request),
     // };
 
-    let command = LogicCommand::ProcessFloodRequest(flood_request);
+    let command = PacketCommand::ProcessFloodRequest(flood_request);
 
     listener_to_transmitter_tx.send(command).expect("Listener cannot communicate with transmitter");
 
@@ -440,7 +440,7 @@ fn check_nack_processing() {
         ],
     };
 
-    let command = LogicCommand::ProcessFloodResponse(flood_response);
+    let command = PacketCommand::ProcessFloodResponse(flood_response);
     listener_to_transmitter_tx.send(command).expect("Listener cannot communicate with transmitter");
 
     let event = simulation_controller_rx.recv().unwrap();
@@ -459,7 +459,7 @@ fn check_nack_processing() {
         ],
     };
 
-    let command = LogicCommand::ProcessFloodResponse(flood_response);
+    let command = PacketCommand::ProcessFloodResponse(flood_response);
     listener_to_transmitter_tx.send(command).expect("Listener cannot communicate with transmitter");
 
     let event = simulation_controller_rx.recv().unwrap();
@@ -500,7 +500,7 @@ fn check_nack_processing() {
         fragment_index: 0,
         nack_type: NackType::ErrorInRouting(3),
     };
-    let command = LogicCommand::ProcessNack { session_id, nack, source: 2 };
+    let command = PacketCommand::ProcessNack { session_id, nack, source: 2 };
     listener_to_transmitter_tx.send(command).expect("Listener cannot communicate with transmitter");
 
     let event = simulation_controller_rx.recv().unwrap();
@@ -537,7 +537,7 @@ fn check_nack_processing() {
     //     pack_type: PacketType::Nack(dropped),
     // };
 
-    let command = LogicCommand::ProcessNack {
+    let command = PacketCommand::ProcessNack {
         session_id,
         nack: dropped,
         source: 1,

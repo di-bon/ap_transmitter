@@ -20,8 +20,8 @@ mod single_packet_transmission_handler;
 #[derive(Debug)]
 pub struct Transmitter {
     node_id: NodeId,
-    listener_rx: Receiver<LogicCommand>,
-    gateway_to_transmitter_rx: Receiver<LogicCommand>,
+    listener_rx: Receiver<PacketCommand>,
+    gateway_to_transmitter_rx: Receiver<PacketCommand>,
     server_logic_rx: Receiver<Message>,
     network_controller: Arc<NetworkController>,
     transmission_handlers: HashMap<u64, Sender<TransmissionHandlerCommand>>,
@@ -55,7 +55,7 @@ enum TransmissionHandlerEvent {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum LogicCommand {
+pub enum PacketCommand {
     SendAckFor { session_id: u64, fragment_index: u64, destination: NodeId },
     ForwardAckTo { session_id: u64, ack: Ack, source: NodeId },
     ProcessNack { session_id: u64, nack: Nack, source: NodeId },
@@ -75,7 +75,7 @@ impl Transmitter {
     pub fn new(
         node_id: NodeId,
         node_type: NodeType,
-        listener_rx: Receiver<LogicCommand>,
+        listener_rx: Receiver<PacketCommand>,
         server_logic_rx: Receiver<Message>,
         connected_drones: HashMap<NodeId, Sender<Packet>>,
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
@@ -184,8 +184,8 @@ impl Transmitter {
     }
 
     /// Processes a `TransmitterInternalCommand` received from `Gateway`
-    fn process_gateway_command(&self, command: LogicCommand) {
-        if let LogicCommand::SendNack { session_id: _session_id, nack, destination: _destination } = &command {
+    fn process_gateway_command(&self, command: PacketCommand) {
+        if let PacketCommand::SendNack { session_id: _session_id, nack, destination: _destination } = &command {
             match &nack.nack_type {
                 NackType::ErrorInRouting(_) | NackType::UnexpectedRecipient(_) => {
                     self.process_logic_command(command);
@@ -205,7 +205,7 @@ impl Transmitter {
     fn send_transmission_handler_command(&self, session_id: u64, command: TransmissionHandlerCommand, source: NodeId) {
         let Some(handler_channel) = self.transmission_handlers.get(&session_id)
         else {
-            let command = LogicCommand::SendNack {
+            let command = PacketCommand::SendNack {
                 session_id,
                 nack: Nack {
                     fragment_index: 0, // Useless when sending UnexpectedRecipient, so set it to 0
@@ -227,9 +227,9 @@ impl Transmitter {
     }
 
     /// Processes a `TransmitterInternalCommand`
-    fn process_logic_command(&self, command: LogicCommand) {
+    fn process_logic_command(&self, command: PacketCommand) {
         match command {
-            LogicCommand::SendAckFor { session_id, fragment_index, destination} => {
+            PacketCommand::SendAckFor { session_id, fragment_index, destination} => {
                 let ack = Ack {
                     fragment_index,
                 };
@@ -251,14 +251,14 @@ impl Transmitter {
                     })
                     .unwrap();
             }
-            LogicCommand::ForwardAckTo { session_id, ack, source } => {
+            PacketCommand::ForwardAckTo { session_id, ack, source } => {
                 let command = TransmissionHandlerCommand::Confirmed(ack.fragment_index);
                 self.send_transmission_handler_command(session_id, command, source);
             }
-            LogicCommand::ProcessNack { session_id, nack, source } => {
+            PacketCommand::ProcessNack { session_id, nack, source } => {
                 self.process_nack(session_id, &nack, source);
             }
-            LogicCommand::SendNack { session_id, nack, destination} => {
+            PacketCommand::SendNack { session_id, nack, destination} => {
                 let packet_type = PacketType::Nack(nack);
 
                 let handler = SinglePacketTransmissionHandler::new(
@@ -276,7 +276,7 @@ impl Transmitter {
                     })
                     .unwrap();
             }
-            LogicCommand::ProcessFloodRequest(flood_request) => {
+            PacketCommand::ProcessFloodRequest(flood_request) => {
                 // if a flood request is received, send a flood_response
                 let mut path_trace = flood_request.path_trace;
                 path_trace.push((self.node_id, NodeType::Server));
@@ -287,7 +287,7 @@ impl Transmitter {
                 };
                 self.gateway.send_flood_response(flood_response);
             }
-            LogicCommand::ProcessFloodResponse(flood_response) => {
+            PacketCommand::ProcessFloodResponse(flood_response) => {
                 self.network_controller.update_from_flood_response(&flood_response);
             }
         }
@@ -338,12 +338,12 @@ mod tests {
     use ap_sc_notifier::SimulationControllerNotifier;
     use crate::transmitter::gateway::Gateway;
     use crate::transmitter::network_controller::NetworkController;
-    use crate::transmitter::{TransmissionHandlerEvent, Transmitter, LogicCommand, Command};
+    use crate::transmitter::{TransmissionHandlerEvent, Transmitter, PacketCommand, Command};
 
     fn create_transmitter(node_id: NodeId, node_type: NodeType, connected_drones: HashMap<NodeId, Sender<Packet>>)
-                          -> (Transmitter, Sender<LogicCommand>, Sender<Message>, Receiver<NodeEvent>, Sender<Command>)
+                          -> (Transmitter, Sender<PacketCommand>, Sender<Message>, Receiver<NodeEvent>, Sender<Command>)
     {
-        let (listener_to_transmitter_tx, listener_to_transmitter_rx) = unbounded::<LogicCommand>();
+        let (listener_to_transmitter_tx, listener_to_transmitter_rx) = unbounded::<PacketCommand>();
         let (server_logic_to_transmitter_tx, server_logic_to_transmitter_rx) = unbounded::<Message>();
 
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
@@ -395,7 +395,7 @@ mod tests {
         let gateway = Gateway::new(node_id, neighbors, gateway_to_transmitter_tx, simulation_controller_notifier.clone());
         let gateway = Arc::new(gateway);
 
-        let (listener_tx, listener_rx) = unbounded::<LogicCommand>();
+        let (listener_tx, listener_rx) = unbounded::<PacketCommand>();
         let (server_logic_tx, server_logic_rx) = unbounded::<Message>();
         let (transmitter_to_transmission_handler_event_tx, transmitter_to_transmission_handler_event_rx) = unbounded::<TransmissionHandlerEvent>();
         let (transmission_handler_to_transmitter_event_tx, transmission_handler_to_transmitter_event_rx) = unbounded::<TransmissionHandlerEvent>();
@@ -501,7 +501,7 @@ mod tests {
             ],
         };
 
-        let flood_response_command = LogicCommand::ProcessFloodResponse(flood_response);
+        let flood_response_command = PacketCommand::ProcessFloodResponse(flood_response);
         listener_to_transmitter_tx.send(flood_response_command).expect("Cannot communicate with transmitter");
 
         sleep(Duration::from_millis(200));
@@ -517,7 +517,7 @@ mod tests {
         let node_type = NodeType::Server;
 
         let (internal_transmitter_to_listener_tx, internal_transmitter_to_listener_rx) = unbounded::<Packet>();
-        let (internal_listener_to_transmitter_tx, internal_listener_to_transmitter_rx) = unbounded::<LogicCommand>();
+        let (internal_listener_to_transmitter_tx, internal_listener_to_transmitter_rx) = unbounded::<PacketCommand>();
         let (internal_server_logic_to_transmitter_tx, internal_server_logic_to_transmitter_rx) = unbounded();
 
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
@@ -562,7 +562,7 @@ mod tests {
         //     session_id: 0,
         //     pack_type: PacketType::FloodResponse(flood_response),
         // };
-        let flood_response_command = LogicCommand::ProcessFloodResponse(flood_response);
+        let flood_response_command = PacketCommand::ProcessFloodResponse(flood_response);
         internal_listener_to_transmitter_tx.send(flood_response_command).expect("Cannot communicate with transmitter");
 
         // TODO: complete this
@@ -586,7 +586,7 @@ mod tests {
         //     session_id: 0,
         //     pack_type: PacketType::FloodResponse(flood_response),
         // };
-        let flood_response_command = LogicCommand::ProcessFloodResponse(flood_response);
+        let flood_response_command = PacketCommand::ProcessFloodResponse(flood_response);
         internal_listener_to_transmitter_tx.send(flood_response_command).expect("Cannot communicate with transmitter");
 
         // TODO: complete this

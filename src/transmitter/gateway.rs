@@ -1,4 +1,4 @@
-use crate::transmitter::LogicCommand;
+use crate::transmitter::PacketCommand;
 use ap_sc_notifier::SimulationControllerNotifier;
 use crossbeam_channel::{SendError, Sender};
 use messages::node_event::NodeEvent;
@@ -11,7 +11,7 @@ use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, Packet, Packe
 pub struct Gateway {
     node_id: NodeId,
     neighbors: HashMap<NodeId, Sender<Packet>>,
-    gateway_to_transmitter_tx: Sender<LogicCommand>,
+    gateway_to_transmitter_tx: Sender<PacketCommand>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
 }
 
@@ -28,7 +28,7 @@ impl Gateway {
     pub fn new(
         node_id: NodeId,
         neighbors: HashMap<NodeId, Sender<Packet>>,
-        gateway_to_transmitter_tx: Sender<LogicCommand>,
+        gateway_to_transmitter_tx: Sender<PacketCommand>,
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
     ) -> Self {
         Self {
@@ -69,7 +69,7 @@ impl Gateway {
             Err(SendError(packet)) => {
                 let nack_type = NackType::ErrorInRouting(next_hop);
                 log::warn!("Error while sending packet {packet} to node {next_hop}: sending nack packet {nack_type:?}");
-                let command = LogicCommand::ProcessNack {
+                let command = PacketCommand::ProcessNack {
                     session_id: packet.session_id,
                     nack: Nack {
                         fragment_index: 0, // Useless if sending ErrorInRouting, so set it to 0
@@ -151,7 +151,7 @@ impl Gateway {
     /// Sends a `TransmitterInternalCommand` to `Transmitter`
     /// # Panics
     /// - Panics if the communication fails
-    pub fn send_command_to_transmitter(&self, command: LogicCommand) {
+    pub fn send_command_to_transmitter(&self, command: PacketCommand) {
         match self.gateway_to_transmitter_tx.send(command) {
             Ok(()) => {}
             Err(SendError(command)) => {

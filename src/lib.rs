@@ -3,4 +3,4 @@
 
 mod transmitter;
 
-pub use transmitter::{Transmitter, Command, LogicCommand};
+pub use transmitter::{Transmitter, Command, PacketCommand};
