@@ -382,7 +382,7 @@ fn check_flood_request_processing() {
         ],
     };
     let expected_flood_response = Packet {
-        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
+        routing_header: SourceRoutingHeader { hop_index: 1, hops: vec![node_id, 1, initiator_id] },
         session_id: 0,
         pack_type: PacketType::FloodResponse(expected_flood_response),
     };

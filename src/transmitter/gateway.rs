@@ -92,10 +92,15 @@ impl Gateway {
             panic!("No next hop in path trace to forward back this FloodResponse");
         };
 
+        let hops: Vec<NodeId> = flood_response
+            .path_trace.iter()
+            .map(|(node_id, _node_type)| *node_id )
+            .collect();
+
         let wrapper_packet = Packet {
             routing_header: SourceRoutingHeader {
-                hop_index: 0,
-                hops: vec![],
+                hop_index: 1,
+                hops,
             },
             session_id: 0, // TODO: default value
             pack_type: PacketType::FloodResponse(flood_response),
@@ -493,8 +498,8 @@ mod test {
 
         let expected = Packet {
             routing_header: SourceRoutingHeader {
-                hop_index: 0,
-                hops: vec![],
+                hop_index: 1,
+                hops: vec![gateway_node_id, 1],
             },
             session_id: 0,
             pack_type: PacketType::FloodResponse(flood_response),
