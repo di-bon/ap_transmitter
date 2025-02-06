@@ -79,6 +79,8 @@ impl NetworkNode {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_variables)]
+
     use super::*;
 
     #[test]

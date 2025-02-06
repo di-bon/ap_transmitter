@@ -126,15 +126,21 @@ impl NetworkController {
     pub fn delete_edge(&self, to: NodeId) {
         self.network_graph.read().unwrap().delete_bidirectional_edge(self.node_id, to);
     }
+
+    pub fn increment_dropped_count(&self, node_id: NodeId) {
+        self.network_graph.read().unwrap().increment_num_of_dropped_packets(node_id);
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_variables)]
+
     use std::collections::HashMap;
     use crossbeam_channel::{unbounded, Sender};
     use ntest::timeout;
     use wg_2024::network::SourceRoutingHeader;
-    use wg_2024::packet::{Ack, Nack, Packet, PacketType};
+    use wg_2024::packet::{Nack, Packet, PacketType};
     use ap_sc_notifier::SimulationControllerNotifier;
     use super::*;
 

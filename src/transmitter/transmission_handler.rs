@@ -180,6 +180,8 @@ impl TransmissionHandler {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_variables)]
+
     use std::collections::HashMap;
     use crossbeam_channel::unbounded;
     use super::*;

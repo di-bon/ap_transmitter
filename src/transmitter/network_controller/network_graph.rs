@@ -210,7 +210,7 @@ impl NetworkGraph {
                 // It may arise when an old Nack::Dropped is received after resetting the
                 // graph and flooding it again
                 log::info!(
-                    "Ignoring old {:?}: graph has already been reset",
+                    "Ignoring old {:?}: graph has been reset",
                     NackType::Dropped
                 );
             }
@@ -252,9 +252,7 @@ impl NetworkGraph {
                 .iter()
                 .find(|node| node.read().unwrap().node_id == current_node_id)
             else {
-                log::error!(
-                    "Cannot get node with NodeId {current_node_id} while getting min paths"
-                );
+                log::error!("Cannot get node with NodeId {current_node_id} while getting min paths");
                 panic!("Cannot get node with NodeId {current_node_id} while getting min paths");
             };
 
@@ -337,6 +335,8 @@ impl NetworkGraph {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_variables)]
+
     use super::*;
     use wg_2024::packet::FloodResponse;
 

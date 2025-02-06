@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crossbeam_channel::{select_biased, unbounded, Receiver, Sender};
 use messages::Message;
 use wg_2024::network::NodeId;
@@ -30,6 +30,8 @@ pub struct Transmitter {
     gateway: Arc<Gateway>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
     transmitter_command_rx: Receiver<Command>,
+    last_flood_timestamp: SystemTime,
+    flood_interval: Duration,
 }
 
 impl PartialEq for Transmitter {
@@ -82,6 +84,7 @@ impl Transmitter {
         connected_drones: HashMap<NodeId, Sender<Packet>>,
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
         transmitter_command_rx: Receiver<Command>,
+        flood_interval: Duration,
     ) -> Self {
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
         let gateway = Gateway::new(node_id, connected_drones, gateway_to_transmitter_tx, simulation_controller_notifier.clone());
@@ -101,6 +104,8 @@ impl Transmitter {
             gateway,
             simulation_controller_notifier,
             transmitter_command_rx,
+            last_flood_timestamp: SystemTime::UNIX_EPOCH,
+            flood_interval
         }
     }
 
@@ -113,8 +118,9 @@ impl Transmitter {
     /// Starts the `Transmitter`, allowing it to process any message sent to it
     pub fn run(&mut self) {
         // when run is called, transmitter should instantaneously flood the network to discover routes
-        self.network_controller.flood_network();
+        // self.network_controller.flood_network();
         loop {
+            self.flood_if_enough_time_elapsed();
             select_biased! {
                 recv(self.transmitter_command_rx) -> command => {
                     if let Ok(command) = command {
@@ -164,6 +170,21 @@ impl Transmitter {
                         self.transmission_handlers.remove(&session_id);
                     }
                 },
+            }
+        }
+    }
+
+    fn flood_if_enough_time_elapsed(&mut self) {
+        match self.last_flood_timestamp.elapsed() {
+            Ok(elapsed) => {
+                if elapsed > self.flood_interval {
+                    self.last_flood_timestamp = SystemTime::now();
+                    self.network_controller.flood_network();
+                }
+            },
+            Err(err) => {
+                log::error!("{}", err.to_string());
+                panic!("{}", err.to_string())
             }
         }
     }
@@ -318,8 +339,9 @@ impl Transmitter {
         self.network_controller.update_from_nack(nack, source);
         match nack.nack_type {
             NackType::Dropped => {
-                let fragment_index = nack.fragment_index;
+                self.network_controller.increment_dropped_count(source);
 
+                let fragment_index = nack.fragment_index;
                 let command = TransmissionHandlerCommand::Resend(fragment_index);
                 self.send_transmission_handler_command(session_id, command, source);
             },
@@ -344,11 +366,13 @@ impl Transmitter {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_variables)]
+
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::thread;
     use std::thread::{sleep};
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime};
     use crossbeam_channel::{unbounded, Receiver, Sender};
     use messages::{Message, MessageType, ResponseType, TextResponse};
     use messages::node_event::NodeEvent;
@@ -435,7 +459,8 @@ mod tests {
             transmission_handler_event_tx: transmission_handler_to_transmitter_event_tx,
             gateway: gateway.clone(),
             simulation_controller_notifier: Arc::new(SimulationControllerNotifier::new(simulation_controller_tx)),
-            transmitter_command_rx
+            transmitter_command_rx,
+            last_flood_timestamp: SystemTime::UNIX_EPOCH,
         };
 
         assert_eq!(transmitter, expected);

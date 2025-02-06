@@ -169,6 +169,8 @@ impl Gateway {
 
 #[cfg(test)]
 mod test {
+    #![allow(unused_variables)]
+
     use super::*;
     use crossbeam_channel::unbounded;
     use ntest::timeout;
