@@ -66,7 +66,9 @@ pub enum PacketCommand {
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    Quit
+    Quit,
+    AddNeighbor(NodeId, Sender<Packet>),
+    RemoveNeighbor(NodeId),
 }
 
 impl Transmitter {
@@ -123,6 +125,14 @@ impl Transmitter {
                                     self.send_transmission_handler_command(*session_id, command, self.node_id);
                                 }
                                 break
+                            },
+                            Command::AddNeighbor(node_id, channel) => {
+                                self.network_controller.insert_neighbor(node_id);
+                                self.gateway.add_neighbor(node_id, channel);
+                            },
+                            Command::RemoveNeighbor(node_id) => {
+                                self.network_controller.delete_edge(node_id);
+                                self.gateway.remove_neighbor(node_id);
                             },
                         }
                     }
@@ -277,20 +287,30 @@ impl Transmitter {
                     .unwrap();
             }
             PacketCommand::ProcessFloodRequest(flood_request) => {
-                // if a flood request is received, send a flood_response
-                let mut path_trace = flood_request.path_trace;
-                path_trace.push((self.node_id, NodeType::Server));
-                path_trace.reverse();
-                let flood_response = FloodResponse {
-                    flood_id: flood_request.flood_id,
-                    path_trace,
-                };
-                self.gateway.send_flood_response(flood_response);
+                self.process_flood_request(flood_request);
             }
             PacketCommand::ProcessFloodResponse(flood_response) => {
                 self.network_controller.update_from_flood_response(&flood_response);
             }
         }
+    }
+
+    fn process_flood_request(&self, flood_request: FloodRequest) {
+        // check if, by any chance, the flood request initiator is self
+        // if so, just ignore the flood request
+        if flood_request.initiator_id == self.node_id {
+            return;
+        }
+
+        // if a valid flood request is received, send a flood_response
+        let mut path_trace = flood_request.path_trace;
+        path_trace.push((self.node_id, NodeType::Server));
+        path_trace.reverse();
+        let flood_response = FloodResponse {
+            flood_id: flood_request.flood_id,
+            path_trace,
+        };
+        self.gateway.send_flood_response(flood_response);
     }
 
     /// Process a `Nack`, updating the `NetworkController` and, if needed, the required `TransmissionHandler`

@@ -122,7 +122,7 @@ impl NetworkGraph {
     }
 
     /// Deletes a node from `NetworkGraph`
-    fn delete_node(&self, node_id: NodeId) {
+    pub fn delete_node(&self, node_id: NodeId) {
         let index = self
             .nodes
             .read()
@@ -145,22 +145,22 @@ impl NetworkGraph {
         log::info!("Network graph reset");
     }
 
-    /// Inserts a bidirectional edge between a and b
-    fn insert_bidirectional_edge(&self, a: NodeId, b: NodeId) {
+    /// Inserts a bidirectional edge between from and to
+    pub(super) fn insert_bidirectional_edge(&self, from: NodeId, to: NodeId) {
         let nodes = self.nodes.read().unwrap();
 
-        let Some(node_a) = nodes.iter().find(|node| node.read().unwrap().node_id == a) else {
-            log::error!("Node 'a' with node_id {a} does not exist");
-            panic!("Node 'a' with node_id {a} does not exist");
+        let Some(node_from) = nodes.iter().find(|node| node.read().unwrap().node_id == from) else {
+            log::error!("Node with node_id {from} does not exist");
+            panic!("Node with node_id {from} does not exist");
         };
 
-        let Some(node_b) = nodes.iter().find(|node| node.read().unwrap().node_id == b) else {
-            log::error!("Node with node_id {b} does not exist");
-            panic!("Node with node_id {b} does not exist");
+        let Some(node_to) = nodes.iter().find(|node| node.read().unwrap().node_id == to) else {
+            log::error!("Node with node_id {to} does not exist");
+            panic!("Node with node_id {to} does not exist");
         };
 
-        node_a.write().unwrap().insert_edge(b);
-        node_b.write().unwrap().insert_edge(a);
+        node_from.write().unwrap().insert_edge(to);
+        node_to.write().unwrap().insert_edge(from);
     }
 
     pub fn insert_edges_from_path_trace(&self, path_trace: &[(NodeId, NodeType)]) {

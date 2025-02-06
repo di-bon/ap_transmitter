@@ -45,7 +45,7 @@ impl NetworkController {
     pub fn flood_network(&self) {
         let mut rng = rand::rng();
         let _session_id: u64 = rng.random(); // TODO: decide if this is needed
-        let flood_id: u64 = rng.random();
+        let flood_id: u64 = rng.random(); // TODO: change this to sequentially generated id's
 
         let flood_request = FloodRequest::initialize(flood_id, self.node_id, self.node_type);
 
@@ -117,6 +117,14 @@ impl NetworkController {
         EventNetworkGraph {
             nodes
         }
+    }
+
+    pub fn insert_neighbor(&self, to: NodeId) {
+        self.network_graph.read().unwrap().insert_bidirectional_edge(self.node_id, to);
+    }
+
+    pub fn delete_edge(&self, to: NodeId) {
+        self.network_graph.read().unwrap().delete_bidirectional_edge(self.node_id, to);
     }
 }
 

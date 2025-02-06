@@ -53,5 +53,11 @@ impl SinglePacketTransmissionHandler {
 
 #[cfg(test)]
 mod tests {
-    // TODO: add tests
+    use ntest::timeout;
+
+    #[test]
+    #[timeout(2000)]
+    fn find_new_routing_header_after_backoff() {
+        // TODO
+    }
 }

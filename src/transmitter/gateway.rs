@@ -3,25 +3,23 @@ use ap_sc_notifier::SimulationControllerNotifier;
 use crossbeam_channel::{SendError, Sender};
 use messages::node_event::NodeEvent;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, Packet, PacketType};
 
 #[derive(Debug)]
 pub struct Gateway {
     node_id: NodeId,
-    neighbors: HashMap<NodeId, Sender<Packet>>,
+    neighbors: RwLock<HashMap<NodeId, Sender<Packet>>>,
     gateway_to_transmitter_tx: Sender<PacketCommand>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
 }
 
 impl PartialEq<Self> for Gateway {
     fn eq(&self, other: &Self) -> bool {
-        self.node_id == other.node_id && self.neighbors.keys().eq(other.neighbors.keys())
+        self.node_id == other.node_id && self.neighbors.read().unwrap().keys().eq(other.neighbors.read().unwrap().keys())
     }
 }
-
-impl Eq for Gateway {}
 
 impl Gateway {
     /// Returns a new instance of `Gateway`
@@ -31,6 +29,7 @@ impl Gateway {
         gateway_to_transmitter_tx: Sender<PacketCommand>,
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
     ) -> Self {
+        let neighbors = RwLock::new(neighbors);
         Self {
             node_id,
             neighbors,
@@ -50,7 +49,7 @@ impl Gateway {
             pack_type: PacketType::FloodRequest(flood_request),
         };
 
-        for (node_id, channel) in &self.neighbors {
+        for (node_id, channel) in self.neighbors.read().unwrap().iter() {
             self.send_on_channel_checked(channel, packet.clone(), *node_id);
         }
     }
@@ -106,7 +105,8 @@ impl Gateway {
             pack_type: PacketType::FloodResponse(flood_response),
         };
 
-        let Some(channel) = self.neighbors.get(&forward_to) else {
+        let binding = self.neighbors.read().unwrap();
+        let Some(channel) = binding.get(&forward_to) else {
             log::error!("No channel found to forward the flood response back to who sent it");
             panic!("No channel found to forward the flood response back to who sent it");
         };
@@ -127,7 +127,7 @@ impl Gateway {
 
         packet.routing_header.hop_index += 1;
 
-        if let Some(channel) = self.neighbors.get(&next_hop) {
+        if let Some(channel) = self.neighbors.read().unwrap().get(&next_hop) {
             self.send_on_channel_checked(channel, packet, next_hop);
         } else {
             log::error!("No channel for required next hop ({next_hop}) for packet {packet}");
@@ -136,8 +136,8 @@ impl Gateway {
     }
 
     /// Adds or updates a channel associated to the `node_id`
-    fn add_neighbor(&mut self, node_id: NodeId, channel: Sender<Packet>) {
-        if self.neighbors.insert(node_id, channel).is_none() {
+    pub fn add_neighbor(&self, node_id: NodeId, channel: Sender<Packet>) {
+        if self.neighbors.write().unwrap().insert(node_id, channel).is_none() {
             log::info!("Added neighbor with NodeId {node_id}");
         } else {
             log::info!("Updated neighbor's channel associated to NodeId {node_id}");
@@ -145,8 +145,8 @@ impl Gateway {
     }
 
     /// Removes a channel from the connected neighbors
-    fn remove_neighbor(&mut self, node_id: NodeId) {
-        if self.neighbors.remove(&node_id).is_some() {
+    pub fn remove_neighbor(&self, node_id: NodeId) {
+        if self.neighbors.write().unwrap().remove(&node_id).is_some() {
             log::info!("Remove neighbor's channel associated to NodeId {node_id}");
         } else {
             log::warn!("Cannot remove neighbor's channel associated to NodeId {node_id}: there is no channel to remove");
@@ -194,12 +194,12 @@ mod test {
         );
 
         assert_eq!(gateway.node_id, node_id);
-        assert!(gateway.neighbors.is_empty());
+        assert!(gateway.neighbors.read().unwrap().is_empty());
 
         let (tx, _rx) = unbounded::<Packet>();
         let expected = Gateway {
             node_id,
-            neighbors: HashMap::new(),
+            neighbors: RwLock::new(HashMap::new()),
             gateway_to_transmitter_tx,
             simulation_controller_notifier,
         };
@@ -358,57 +358,6 @@ mod test {
 
         assert_eq!(received, packet);
     }
-
-    /*
-    #[test]
-    #[should_panic]
-    #[timeout(2000)]
-    fn send_on_channel_checked_test_fail() {
-        let (tx_drone, rx_drone) = unbounded::<Packet>();
-        let mut neighbors = HashMap::new();
-        neighbors.insert(1, tx_drone);
-
-        let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
-        let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
-
-        let gateway = Gateway::new(10, neighbors.clone(), simulation_controller_notifier);
-
-        let packet = Packet {
-            pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
-            routing_header: SourceRoutingHeader {
-                hop_index: 0,
-                hops: vec![10, 1, 2],
-            },
-            session_id: 0,
-        };
-
-        drop(rx_drone);
-        gateway.send_on_channel_checked(
-            neighbors.get(&1).unwrap(),
-            packet.clone(),
-            packet.routing_header.next_hop().unwrap(),
-        );
-
-        /*
-        let received_from_listener = listener_rx.recv().unwrap();
-
-        let expected = Packet {
-            routing_header: SourceRoutingHeader {
-                hop_index: 0,
-                hops: vec![10],
-            },
-            session_id: 0,
-            pack_type: PacketType::Nack(Nack {
-                fragment_index: 0,
-                nack_type: NackType::ErrorInRouting(1),
-            }),
-        };
-
-        assert_eq!(received_from_listener, expected);
-         */
-    }
-     */
 
     #[test]
     #[timeout(2000)]
@@ -587,16 +536,16 @@ mod test {
             simulation_controller_notifier,
         );
 
-        assert_eq!(gateway.neighbors.len(), 0);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 0);
         let (tx_drone_5, _rx_drone_5) = unbounded::<Packet>();
         gateway.add_neighbor(5, tx_drone_5);
-        assert_eq!(gateway.neighbors.len(), 1);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 1);
         let (tx_drone_5, _rx_drone_5) = unbounded::<Packet>();
         gateway.add_neighbor(5, tx_drone_5);
-        assert_eq!(gateway.neighbors.len(), 1);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 1);
         let (tx_drone_8, _rx_drone_8) = unbounded::<Packet>();
         gateway.add_neighbor(8, tx_drone_8);
-        assert_eq!(gateway.neighbors.len(), 2);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 2);
     }
 
     #[test]
@@ -615,19 +564,19 @@ mod test {
             simulation_controller_notifier,
         );
 
-        assert_eq!(gateway.neighbors.len(), 0);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 0);
         let (tx_drone_5, _rx_drone_5) = unbounded::<Packet>();
         gateway.add_neighbor(5, tx_drone_5);
-        assert_eq!(gateway.neighbors.len(), 1);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 1);
         let (tx_drone_5, _rx_drone_5) = unbounded::<Packet>();
         gateway.add_neighbor(5, tx_drone_5);
-        assert_eq!(gateway.neighbors.len(), 1);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 1);
         let (tx_drone_8, _rx_drone_8) = unbounded::<Packet>();
         gateway.add_neighbor(8, tx_drone_8);
-        assert_eq!(gateway.neighbors.len(), 2);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 2);
         gateway.remove_neighbor(8);
-        assert_eq!(gateway.neighbors.len(), 1);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 1);
         gateway.remove_neighbor(5);
-        assert_eq!(gateway.neighbors.len(), 0);
+        assert_eq!(gateway.neighbors.read().unwrap().len(), 0);
     }
 }
