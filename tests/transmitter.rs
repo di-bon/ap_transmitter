@@ -11,6 +11,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use messages::{Message, MessageType, MessageUtilities, ResponseType, TextResponse};
 use messages::node_event::NodeEvent;
 use ntest::timeout;
+use wg_2024::controller::DroneCommand;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 use ap_transmitter::{Transmitter, Command, PacketCommand};
@@ -20,11 +21,13 @@ pub fn create_transmitter(
     node_type: NodeType,
     connected_drones: HashMap<NodeId, Sender<Packet>>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
-) -> (Transmitter, Sender<PacketCommand>, Sender<Message>, Sender<Command>) {
+) -> (Transmitter, Sender<PacketCommand>, Sender<Message>, Sender<Command>, Sender<DroneCommand>) {
 
     let (listener_to_transmitter_tx, listener_to_transmitter_rx) = unbounded();
     let (logic_to_transmitter_tx, logic_to_transmitter_rx) = unbounded();
     let (transmitter_command_tx, transmitter_command_rx) = unbounded();
+
+    let (server_to_transmitter_drone_command_tx, server_to_transmitter_drone_command_rx) = unbounded();
 
     let transmitter = Transmitter::new(
         node_id,
@@ -35,9 +38,10 @@ pub fn create_transmitter(
         simulation_controller_notifier,
         transmitter_command_rx,
         Duration::from_secs(60),
+        server_to_transmitter_drone_command_rx
     );
 
-    (transmitter, listener_to_transmitter_tx, logic_to_transmitter_tx, transmitter_command_tx)
+    (transmitter, listener_to_transmitter_tx, logic_to_transmitter_tx, transmitter_command_tx, server_to_transmitter_drone_command_tx)
 }
 
 pub fn create_simulation_controller_notifier() -> (Arc<SimulationControllerNotifier>, Receiver<NodeEvent>) {
@@ -63,7 +67,8 @@ fn check_quit_command() -> thread::Result<()> {
     let (mut transmitter,
         listener_to_transmitter_tx,
         logic_to_transmitter_tx,
-        transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
+        transmitter_command_tx,
+        server_to_transmitter_drone_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
 
     let handle = thread::spawn(move || {
         transmitter.run();
@@ -91,7 +96,8 @@ fn check_message_handling_and_forwarding() {
     let (mut transmitter,
         listener_to_transmitter_tx,
         logic_to_transmitter_tx,
-        transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
+        transmitter_command_tx,
+        server_to_transmitter_drone_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
 
     let handle = thread::spawn(move || {
         transmitter.run();
@@ -226,7 +232,8 @@ fn check_unexpected_ack() {
     let (mut transmitter,
         listener_to_transmitter_tx,
         logic_to_transmitter_tx,
-        transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
+        transmitter_command_tx,
+        server_to_transmitter_drone_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
 
     let handle = thread::spawn(move || {
         transmitter.run();
@@ -310,7 +317,8 @@ fn check_flood_request_processing() {
     let (mut transmitter,
         listener_to_transmitter_tx,
         logic_to_transmitter_tx,
-        transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
+        transmitter_command_tx,
+        server_to_transmitter_drone_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
 
     let handle = thread::spawn(move || {
         transmitter.run();
@@ -411,7 +419,8 @@ fn check_nack_processing() {
     let (mut transmitter,
         listener_to_transmitter_tx,
         logic_to_transmitter_tx,
-        transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
+        transmitter_command_tx,
+        server_to_transmitter_drone_command_tx) = create_transmitter(node_id, node_type, connected_drones, simulation_controller_notifier.clone());
 
     let handle = thread::spawn(move || {
         transmitter.run();

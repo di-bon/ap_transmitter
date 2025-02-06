@@ -7,6 +7,7 @@ use messages::Message;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 use ap_sc_notifier::SimulationControllerNotifier;
+use wg_2024::controller::DroneCommand;
 use crate::transmitter::network_controller::NetworkController;
 use crate::transmitter::gateway::Gateway;
 use crate::transmitter::single_packet_transmission_handler::SinglePacketTransmissionHandler;
@@ -32,6 +33,7 @@ pub struct Transmitter {
     transmitter_command_rx: Receiver<Command>,
     last_flood_timestamp: SystemTime,
     flood_interval: Duration,
+    server_to_transmitter_drone_command_rx: Receiver<DroneCommand>,
 }
 
 impl PartialEq for Transmitter {
@@ -85,6 +87,7 @@ impl Transmitter {
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
         transmitter_command_rx: Receiver<Command>,
         flood_interval: Duration,
+        server_to_transmitter_drone_command_rx: Receiver<DroneCommand>
     ) -> Self {
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
         let gateway = Gateway::new(node_id, connected_drones, gateway_to_transmitter_tx, simulation_controller_notifier.clone());
@@ -105,7 +108,8 @@ impl Transmitter {
             simulation_controller_notifier,
             transmitter_command_rx,
             last_flood_timestamp: SystemTime::UNIX_EPOCH,
-            flood_interval
+            flood_interval,
+            server_to_transmitter_drone_command_rx
         }
     }
 
@@ -122,6 +126,23 @@ impl Transmitter {
         loop {
             self.flood_if_enough_time_elapsed();
             select_biased! {
+                recv(self.server_to_transmitter_drone_command_rx) -> drone_command => {
+                    if let Ok(drone_command) = drone_command {
+                        match drone_command {
+                            DroneCommand::AddSender(node_id, channel) => {
+                                self.gateway.add_neighbor(node_id, channel);
+                            },
+                            DroneCommand::RemoveSender(node_id) => {
+                                self.gateway.remove_neighbor(node_id);
+                            },
+                            DroneCommand::SetPacketDropRate(_)
+                            | DroneCommand::Crash => {
+                                panic!("Received unsupported {drone_command:?}");
+                            },
+                        }
+                    }
+                    panic!("Error while receiving DroneCommand from server");
+                },
                 recv(self.transmitter_command_rx) -> command => {
                     if let Ok(command) = command {
                         match command {
@@ -142,6 +163,7 @@ impl Transmitter {
                             },
                         }
                     }
+                    panic!("Error while receiving Command");
                 },
                 recv(self.listener_rx) -> command => {
                     if let Ok(command) = command {
@@ -380,11 +402,12 @@ mod tests {
     use wg_2024::network::{NodeId, SourceRoutingHeader};
     use wg_2024::packet::{FloodResponse, Fragment, NodeType, Packet, PacketType};
     use ap_sc_notifier::SimulationControllerNotifier;
+    use wg_2024::controller::DroneCommand;
     use crate::transmitter::gateway::Gateway;
     use crate::transmitter::network_controller::NetworkController;
     use crate::transmitter::{TransmissionHandlerEvent, Transmitter, PacketCommand, Command};
 
-    fn create_transmitter(node_id: NodeId, node_type: NodeType, connected_drones: HashMap<NodeId, Sender<Packet>>, flooding_interval: Duration)
+    fn create_transmitter(node_id: NodeId, node_type: NodeType, connected_drones: HashMap<NodeId, Sender<Packet>>, flooding_interval: Duration, server_to_transmitter_drone_command_rx: Receiver<DroneCommand>)
                           -> (Transmitter, Sender<PacketCommand>, Sender<Message>, Receiver<NodeEvent>, Sender<Command>)
     {
         let (listener_to_transmitter_tx, listener_to_transmitter_rx) = unbounded::<PacketCommand>();
@@ -404,7 +427,8 @@ mod tests {
             connected_drones,
             simulation_controller_notifier,
             transmitter_command_rx,
-            flooding_interval
+            flooding_interval,
+            server_to_transmitter_drone_command_rx
         );
 
         (transmitter, listener_to_transmitter_tx, server_logic_to_transmitter_tx, simulation_controller_rx, transmitter_command_tx)
@@ -420,11 +444,13 @@ mod tests {
         let (drone_1_tx, drone_1_rx) = unbounded::<Packet>();
         connected_drones.insert(drone_1_id, drone_1_tx);
 
+        let (server_to_transmitter_drone_command_tx, server_to_transmitter_drone_command_rx) = unbounded();
+
         let (transmitter,
             listener_to_transmitter_tx,
             server_logic_to_transmitter_tx,
             simulation_controller_rx,
-            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60));
+            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60), server_to_transmitter_drone_command_rx);
 
 
         let mut neighbors = HashMap::new();
@@ -449,6 +475,8 @@ mod tests {
 
         let (transmitter_command_tx, transmitter_command_rx) = unbounded::<Command>();
 
+        let (server_to_transmitter_drone_command_tx, server_to_transmitter_drone_command_rx) = unbounded();
+
         let expected = Transmitter {
             node_id,
             listener_rx,
@@ -463,6 +491,7 @@ mod tests {
             transmitter_command_rx,
             last_flood_timestamp: SystemTime::UNIX_EPOCH,
             flood_interval: Duration::from_secs(60),
+            server_to_transmitter_drone_command_rx,
         };
 
         assert_eq!(transmitter, expected);
@@ -479,12 +508,14 @@ mod tests {
         let (drone_1_tx, drone_1_rx) = unbounded::<Packet>();
         connected_drones.insert(drone_1_id, drone_1_tx);
 
+        let (server_to_transmitter_drone_command_tx, server_to_transmitter_drone_command_rx) = unbounded();
+
         let (mut transmitter,
             listener_to_transmitter_tx,
             server_logic_to_transmitter_tx,
             simulation_controller_rx,
             transmitter_command_tx
-        ) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60));
+        ) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60), server_to_transmitter_drone_command_rx);
 
         let message = Message {
             source: 0,
@@ -519,11 +550,13 @@ mod tests {
         let (drone_1_tx, drone_1_rx) = unbounded::<Packet>();
         connected_drones.insert(drone_1_id, drone_1_tx);
 
+        let (server_to_transmitter_drone_command_tx, server_to_transmitter_drone_command_rx) = unbounded();
+
         let (mut transmitter,
             listener_to_transmitter_tx,
             server_logic_to_transmitter_tx,
             simulation_controller_rx,
-            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60));
+            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60), server_to_transmitter_drone_command_rx);
 
         let packet = Packet {
             routing_header: SourceRoutingHeader { hop_index: 1, hops: vec![1, 0] },
@@ -579,6 +612,8 @@ mod tests {
         // let (drone_1_tx, drone_1_rx) = unbounded::<Packet>();
         // connected_drones.insert(1, drone_1_tx);
 
+        let (server_to_transmitter_drone_command_tx, server_to_transmitter_drone_command_rx) = unbounded();
+
         let mut transmitter = Transmitter::new(
             node_id,
             node_type,
@@ -588,6 +623,7 @@ mod tests {
             simulation_controller_notifier,
             transmitter_command_rx,
             Duration::from_secs(60),
+            server_to_transmitter_drone_command_rx
         );
 
         thread::spawn(move || {
