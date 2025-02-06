@@ -384,7 +384,7 @@ mod tests {
     use crate::transmitter::network_controller::NetworkController;
     use crate::transmitter::{TransmissionHandlerEvent, Transmitter, PacketCommand, Command};
 
-    fn create_transmitter(node_id: NodeId, node_type: NodeType, connected_drones: HashMap<NodeId, Sender<Packet>>)
+    fn create_transmitter(node_id: NodeId, node_type: NodeType, connected_drones: HashMap<NodeId, Sender<Packet>>, flooding_interval: Duration)
                           -> (Transmitter, Sender<PacketCommand>, Sender<Message>, Receiver<NodeEvent>, Sender<Command>)
     {
         let (listener_to_transmitter_tx, listener_to_transmitter_rx) = unbounded::<PacketCommand>();
@@ -403,7 +403,8 @@ mod tests {
             server_logic_to_transmitter_rx,
             connected_drones,
             simulation_controller_notifier,
-            transmitter_command_rx
+            transmitter_command_rx,
+            flooding_interval
         );
 
         (transmitter, listener_to_transmitter_tx, server_logic_to_transmitter_tx, simulation_controller_rx, transmitter_command_tx)
@@ -423,7 +424,7 @@ mod tests {
             listener_to_transmitter_tx,
             server_logic_to_transmitter_tx,
             simulation_controller_rx,
-            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones);
+            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60));
 
 
         let mut neighbors = HashMap::new();
@@ -461,6 +462,7 @@ mod tests {
             simulation_controller_notifier: Arc::new(SimulationControllerNotifier::new(simulation_controller_tx)),
             transmitter_command_rx,
             last_flood_timestamp: SystemTime::UNIX_EPOCH,
+            flood_interval: Duration::from_secs(60),
         };
 
         assert_eq!(transmitter, expected);
@@ -482,7 +484,7 @@ mod tests {
             server_logic_to_transmitter_tx,
             simulation_controller_rx,
             transmitter_command_tx
-        ) = create_transmitter(node_id, node_type, connected_drones);
+        ) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60));
 
         let message = Message {
             source: 0,
@@ -521,7 +523,7 @@ mod tests {
             listener_to_transmitter_tx,
             server_logic_to_transmitter_tx,
             simulation_controller_rx,
-            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones);
+            transmitter_command_tx) = create_transmitter(node_id, node_type, connected_drones, Duration::from_secs(60));
 
         let packet = Packet {
             routing_header: SourceRoutingHeader { hop_index: 1, hops: vec![1, 0] },
@@ -585,6 +587,7 @@ mod tests {
             connected_drones,
             simulation_controller_notifier,
             transmitter_command_rx,
+            Duration::from_secs(60),
         );
 
         thread::spawn(move || {

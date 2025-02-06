@@ -34,6 +34,7 @@ pub fn create_transmitter(
         connected_drones,
         simulation_controller_notifier,
         transmitter_command_rx,
+        Duration::from_secs(60),
     );
 
     (transmitter, listener_to_transmitter_tx, logic_to_transmitter_tx, transmitter_command_tx)
