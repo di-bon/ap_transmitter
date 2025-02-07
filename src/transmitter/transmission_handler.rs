@@ -10,7 +10,6 @@ use messages::node_event::NodeEvent;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Packet, PacketType};
 use ap_sc_notifier::SimulationControllerNotifier;
-use crate::transmitter::{TransmissionHandlerCommand, TransmissionHandlerEvent};
 use crate::transmitter::gateway::Gateway;
 use crate::transmitter::network_controller::NetworkController;
 
@@ -23,12 +22,25 @@ pub struct TransmissionHandler {
     gateway: Arc<Gateway>,
     network_controller: Arc<NetworkController>,
     destination: NodeId,
-    command_rx: Receiver<TransmissionHandlerCommand>,
+    command_rx: Receiver<Command>,
     received_acks: HashSet<u64>,
-    transmission_handler_event_tx: Sender<TransmissionHandlerEvent>,
+    transmission_handler_event_tx: Sender<Event>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
     backoff_time: Duration, // the time to wait before trying again to find a new SourceRoutingHeader if the previous time there was no known path
     last_header_update_time: SystemTime,
+}
+
+#[derive(Debug, Clone)]
+pub enum Command {
+    Resend(u64),
+    Confirmed(u64),
+    Quit,
+    UpdateHeader,
+}
+
+#[derive(Debug, Clone)]
+pub enum Event {
+    TransmissionCompleted(u64)
 }
 
 impl TransmissionHandler {
@@ -36,8 +48,8 @@ impl TransmissionHandler {
         message: Message,
         gateway: Arc<Gateway>,
         network_controller: Arc<NetworkController>,
-        command_rx: Receiver<TransmissionHandlerCommand>,
-        transmission_handler_event_tx: Sender<TransmissionHandlerEvent>,
+        command_rx: Receiver<Command>,
+        transmission_handler_event_tx: Sender<Event>,
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
         backoff_time: Duration,
     ) -> Self {
@@ -56,12 +68,10 @@ impl TransmissionHandler {
             transmission_handler_event_tx,
             simulation_controller_notifier,
             backoff_time,
-            last_header_update_time: SystemTime::UNIX_EPOCH // Set last update to 1970-01-01 00:00:00 UTC to make sure that the header will be updated on the first TransmissionHandlerCommand::UpdateHeader received
+            last_header_update_time: SystemTime::UNIX_EPOCH // Set last update to 1970-01-01 00:00:00 UTC to make sure that the header will be updated on the first Command::UpdateHeader received
         }
     }
 
-    // Basic version: send all the fragments all at once, then wait for commands, exit when receiving an ACK for each fragment
-    // Refined version: use a sliding window (using AIMD? (i.e. Additive Increase Multiplicative Decrease)) to send the fragments
     pub fn run(&mut self) {
         let mut source_routing_header = self.find_new_routing_header();
 
@@ -80,20 +90,20 @@ impl TransmissionHandler {
             if let Ok(command) = command {
                 log::info!("Received command {command:?}");
                 match command {
-                    TransmissionHandlerCommand::Resend(fragment_index) => {
+                    Command::Resend(fragment_index) => {
                         self.process_resend_command(fragment_index, &mut source_routing_header);
                     },
-                    TransmissionHandlerCommand::Confirmed(fragment_index) => {
+                    Command::Confirmed(fragment_index) => {
                         if self.process_confirmed_command(fragment_index) {
                             let event = NodeEvent::MessageSentSuccessfully(self.message.clone());
                             self.simulation_controller_notifier.send_event(event);
                             break
                         }
                     },
-                    TransmissionHandlerCommand::UpdateHeader => {
+                    Command::UpdateHeader => {
                         self.process_update_header_command(&mut source_routing_header);
                     },
-                    TransmissionHandlerCommand::Quit => {
+                    Command::Quit => {
                         break;
                     },
                 }
@@ -103,7 +113,7 @@ impl TransmissionHandler {
             }
         }
 
-        let event = TransmissionHandlerEvent::TransmissionCompleted(self.session_id);
+        let event = Event::TransmissionCompleted(self.session_id);
         self.notify_transmitter(event);
 
         log::info!("Transmission handler for session {} terminated", self.session_id);
@@ -118,7 +128,7 @@ impl TransmissionHandler {
                 self.gateway.forward(packet);
             },
             None => {
-                log::warn!("TransmissionHandler for session {} received a command {:?} with fragment index {fragment_index} out of bounds", self.session_id, TransmissionHandlerCommand::Resend(fragment_index));
+                log::warn!("TransmissionHandler for session {} received a command {:?} with fragment index {fragment_index} out of bounds", self.session_id, Command::Resend(fragment_index));
             }
         }
     }
@@ -143,14 +153,14 @@ impl TransmissionHandler {
         }
     }
 
-    fn notify_transmitter(&self, event: TransmissionHandlerEvent) {
+    fn notify_transmitter(&self, event: Event) {
         log::info!("Transmission handler for session {} is sending {:?} to transmitter", self.session_id, event);
         match self.transmission_handler_event_tx.send(event) {
             Ok(()) => {
-                log::info!("Transmission handler for session {} sent a TransmissionHandlerEvent to transmitter", self.session_id);
+                log::info!("Transmission handler for session {} sent a Event to transmitter", self.session_id);
             }
             Err(err) => {
-                log::warn!("Transmission handler for session {} cannot send TransmissionHandlerEvent messages to transmitter. Error: {err:?}", self.session_id);
+                log::warn!("Transmission handler for session {} cannot send Event messages to transmitter. Error: {err:?}", self.session_id);
             }
         }
     }
@@ -191,7 +201,7 @@ mod tests {
     use wg_2024::packet::{FloodResponse, NodeType, Packet, PacketType};
     use crate::transmitter::PacketCommand;
 
-    fn create_transmission_handler(message: &Message, node_id: NodeId, node_type: NodeType, destination_node_id: NodeId, paths: Vec<FloodResponse>, backoff_time: Duration) -> (TransmissionHandler, Receiver<Packet>, Receiver<NodeEvent>, Sender<TransmissionHandlerCommand>, Receiver<PacketCommand>) {
+    fn create_transmission_handler(message: &Message, node_id: NodeId, node_type: NodeType, destination_node_id: NodeId, paths: Vec<FloodResponse>, backoff_time: Duration) -> (TransmissionHandler, Receiver<Packet>, Receiver<NodeEvent>, Sender<Command>, Receiver<PacketCommand>) {
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
         let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
@@ -206,10 +216,10 @@ mod tests {
         let gateway = Gateway::new(0, connected_drones, gateway_to_transmitter_tx, simulation_controller_notifier.clone());
         let gateway = Arc::new(gateway);
 
-        let (command_tx, command_rx) = unbounded::<TransmissionHandlerCommand>();
+        let (command_tx, command_rx) = unbounded::<Command>();
         let network_controller = NetworkController::new(node_id, node_type, gateway.clone(), simulation_controller_notifier.clone());
         let network_controller = Arc::new(network_controller);
-        let (transmission_handler_event_tx, transmission_handler_event_rx) = unbounded::<TransmissionHandlerEvent>();
+        let (transmission_handler_event_tx, transmission_handler_event_rx) = unbounded::<Event>();
 
         for path in paths {
             network_controller.update_from_flood_response(&path);
@@ -326,7 +336,7 @@ mod tests {
             transmission_handler.run();
         });
 
-        let _ = command_tx.send(TransmissionHandlerCommand::Resend(0)).unwrap();
+        let _ = command_tx.send(Command::Resend(0)).unwrap();
 
         let fragments = NaiveAssembler::disassemble(&message.stringify().into_bytes());
         let expected_packets: Vec<Packet> = fragments.iter().map(|fragment: &Fragment|
@@ -342,7 +352,7 @@ mod tests {
             assert_eq!(received, *expected_packet);
 
             if let PacketType::MsgFragment(fragment) = received.pack_type {
-                match command_tx.send(TransmissionHandlerCommand::Confirmed(fragment.fragment_index)) {
+                match command_tx.send(Command::Confirmed(fragment.fragment_index)) {
                     Ok(()) => (),
                     Err(err) => panic!("Cannot communicate with transmission handler"),
                 }
@@ -397,7 +407,7 @@ mod tests {
             transmission_handler.run();
         });
 
-        let _ = command_tx.send(TransmissionHandlerCommand::Quit).unwrap();
+        let _ = command_tx.send(Command::Quit).unwrap();
 
         handle.join()
     }

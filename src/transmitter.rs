@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use crossbeam_channel::{select_biased, unbounded, Receiver, Sender};
 use messages::Message;
 use wg_2024::network::NodeId;
@@ -11,7 +11,7 @@ use wg_2024::controller::DroneCommand;
 use crate::transmitter::network_controller::NetworkController;
 use crate::transmitter::gateway::Gateway;
 use crate::transmitter::single_packet_transmission_handler::SinglePacketTransmissionHandler;
-use crate::transmitter::transmission_handler::TransmissionHandler;
+use crate::transmitter::transmission_handler::{TransmissionHandler, Command as TransmissionHandlerCommand, Event as TransmissionHandlerEvent};
 
 mod network_controller;
 mod gateway;
@@ -43,19 +43,6 @@ impl PartialEq for Transmitter {
             && self.transmission_handlers.keys().eq(other.transmission_handlers.keys())
             && self.gateway.eq(&other.gateway)
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum TransmissionHandlerCommand {
-    Resend(u64),
-    Confirmed(u64),
-    Quit,
-    UpdateHeader,
-}
-
-#[derive(Debug, Clone)]
-enum TransmissionHandlerEvent {
-    TransmissionCompleted(u64)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -121,9 +108,8 @@ impl Transmitter {
 
     /// Starts the `Transmitter`, allowing it to process any message sent to it
     pub fn run(&mut self) {
-        // when run is called, transmitter should instantaneously flood the network to discover routes
-        // self.network_controller.flood_network();
         loop {
+            // Periodically flood the network
             self.flood_if_enough_time_elapsed();
             select_biased! {
                 recv(self.server_to_transmitter_drone_command_rx) -> drone_command => {
@@ -165,7 +151,6 @@ impl Transmitter {
                                 self.network_controller.delete_edge(node_id);
                                 self.gateway.remove_neighbor(node_id);
                             },
-
                              */
                         }
                     }
@@ -202,10 +187,12 @@ impl Transmitter {
         }
     }
 
+    /// Floods the network if the last flooding was done at least `self.flood_interval` time ago
+    /// Note: the previous known network gets deleted
     fn flood_if_enough_time_elapsed(&mut self) {
         match self.last_flood_timestamp.elapsed() {
             Ok(elapsed) => {
-                if elapsed > self.flood_interval {
+                if elapsed >= self.flood_interval {
                     self.last_flood_timestamp = SystemTime::now();
                     self.network_controller.flood_network();
                 }
@@ -344,8 +331,9 @@ impl Transmitter {
         }
     }
 
+    /// Processes a `FloodRequest`, sending a `FloodResponse` back to the initiator
     fn process_flood_request(&self, flood_request: FloodRequest) {
-        // check if, by any chance, the flood request initiator is self
+        // check if, by any chance, the flood request initiator is self.node_id
         // if so, just ignore the flood request
         if flood_request.initiator_id == self.node_id {
             return;
@@ -382,10 +370,8 @@ impl Transmitter {
                 let command = TransmissionHandlerCommand::Resend(fragment_index);
                 self.send_transmission_handler_command(session_id, command, source);
             },
-            NackType::UnexpectedRecipient(_unexpected_recipient_id) => {
-                // don't do anything, case already handled by updating the network_controller
-            }
-            NackType::DestinationIsDrone => {
+            NackType::UnexpectedRecipient(_)
+            | NackType::DestinationIsDrone => {
                 // don't do anything, case already handled by updating the network_controller
             }
         }
