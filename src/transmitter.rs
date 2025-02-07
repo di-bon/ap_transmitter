@@ -71,8 +71,8 @@ pub enum PacketCommand {
 #[derive(Debug, Clone)]
 pub enum Command {
     Quit,
-    AddNeighbor(NodeId, Sender<Packet>),
-    RemoveNeighbor(NodeId),
+    // AddNeighbor(NodeId, Sender<Packet>),
+    // RemoveNeighbor(NodeId),
 }
 
 impl Transmitter {
@@ -130,9 +130,11 @@ impl Transmitter {
                     if let Ok(drone_command) = drone_command {
                         match drone_command {
                             DroneCommand::AddSender(node_id, channel) => {
+                                self.network_controller.insert_neighbor(node_id);
                                 self.gateway.add_neighbor(node_id, channel);
                             },
                             DroneCommand::RemoveSender(node_id) => {
+                                self.network_controller.delete_edge(node_id);
                                 self.gateway.remove_neighbor(node_id);
                             },
                             DroneCommand::SetPacketDropRate(_)
@@ -153,6 +155,7 @@ impl Transmitter {
                                 }
                                 break
                             },
+                            /*
                             Command::AddNeighbor(node_id, channel) => {
                                 self.network_controller.insert_neighbor(node_id);
                                 self.gateway.add_neighbor(node_id, channel);
@@ -161,6 +164,8 @@ impl Transmitter {
                                 self.network_controller.delete_edge(node_id);
                                 self.gateway.remove_neighbor(node_id);
                             },
+
+                             */
                         }
                     }
                     panic!("Error while receiving Command");
@@ -623,7 +628,7 @@ mod tests {
             simulation_controller_notifier,
             transmitter_command_rx,
             Duration::from_secs(60),
-            server_to_transmitter_drone_command_rx
+            server_to_transmitter_drone_command_rx,
         );
 
         thread::spawn(move || {
