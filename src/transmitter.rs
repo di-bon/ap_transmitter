@@ -142,8 +142,9 @@ impl Transmitter {
                                 panic!("Received unsupported {drone_command:?}");
                             },
                         }
+                    } else {
+                        panic!("Error while receiving DroneCommand from server");
                     }
-                    panic!("Error while receiving DroneCommand from server");
                 },
                 recv(self.transmitter_command_rx) -> command => {
                     if let Ok(command) = command {
