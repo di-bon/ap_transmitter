@@ -16,7 +16,6 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::{
     Ack, FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType,
 };
-use crate::PacketCommand;
 
 mod gateway;
 mod network_controller;
@@ -39,6 +38,32 @@ pub struct Transmitter {
     last_flood_timestamp: SystemTime,
     flood_interval: Duration,
     logic_to_transmitter_drone_command_rx: Receiver<DroneCommand>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PacketCommand {
+    SendAckFor {
+        session_id: u64,
+        fragment_index: u64,
+        destination: NodeId,
+    },
+    ForwardAckTo {
+        session_id: u64,
+        ack: Ack,
+        source: NodeId,
+    },
+    ProcessNack {
+        session_id: u64,
+        nack: Nack,
+        source: NodeId,
+    },
+    ProcessFloodRequest(FloodRequest),
+    ProcessFloodResponse(FloodResponse),
+    SendNack {
+        session_id: u64,
+        nack: Nack,
+        destination: NodeId,
+    },
 }
 
 impl PartialEq for Transmitter {
