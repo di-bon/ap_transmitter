@@ -17,7 +17,13 @@ pub struct Gateway {
 
 impl PartialEq<Self> for Gateway {
     fn eq(&self, other: &Self) -> bool {
-        self.node_id == other.node_id && self.neighbors.read().unwrap().keys().eq(other.neighbors.read().unwrap().keys())
+        self.node_id == other.node_id
+            && self
+                .neighbors
+                .read()
+                .unwrap()
+                .keys()
+                .eq(other.neighbors.read().unwrap().keys())
     }
 }
 
@@ -90,15 +96,13 @@ impl Gateway {
         };
 
         let hops: Vec<NodeId> = flood_response
-            .path_trace.iter()
-            .map(|(node_id, _node_type)| *node_id )
+            .path_trace
+            .iter()
+            .map(|(node_id, _node_type)| *node_id)
             .collect();
 
         let wrapper_packet = Packet {
-            routing_header: SourceRoutingHeader {
-                hop_index: 1,
-                hops,
-            },
+            routing_header: SourceRoutingHeader { hop_index: 1, hops },
             session_id: 0, // TODO: default value
             pack_type: PacketType::FloodResponse(flood_response),
         };
@@ -132,7 +136,13 @@ impl Gateway {
 
     /// Adds or updates a channel associated to the `node_id`
     pub fn add_neighbor(&self, node_id: NodeId, channel: Sender<Packet>) {
-        if self.neighbors.write().unwrap().insert(node_id, channel).is_none() {
+        if self
+            .neighbors
+            .write()
+            .unwrap()
+            .insert(node_id, channel)
+            .is_none()
+        {
             log::info!("Added neighbor with NodeId {node_id}");
         } else {
             log::info!("Updated neighbor's channel associated to NodeId {node_id}");

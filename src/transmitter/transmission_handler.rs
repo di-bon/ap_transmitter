@@ -1,17 +1,17 @@
+use crate::transmitter::gateway::Gateway;
+use crate::transmitter::network_controller::NetworkController;
+use ap_sc_notifier::SimulationControllerNotifier;
+use assembler::naive_assembler::NaiveAssembler;
+use assembler::Assembler;
+use crossbeam_channel::{Receiver, Sender};
+use messages::node_event::NodeEvent;
+use messages::{Message, MessageUtilities};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime};
-use assembler::Assembler;
-use assembler::naive_assembler::NaiveAssembler;
-use crossbeam_channel::{Receiver, Sender};
-use messages::{Message, MessageUtilities};
-use messages::node_event::NodeEvent;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Packet, PacketType};
-use ap_sc_notifier::SimulationControllerNotifier;
-use crate::transmitter::gateway::Gateway;
-use crate::transmitter::network_controller::NetworkController;
 
 /// A `TransmissionHandler` struct that will transmit a `Message`, fragmenting it into `Fragment`s,
 /// creating the required `Packet`s and sending them via the `Gateway`
@@ -40,7 +40,7 @@ pub enum Command {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    TransmissionCompleted(u64)
+    TransmissionCompleted(u64),
 }
 
 impl TransmissionHandler {
@@ -68,7 +68,7 @@ impl TransmissionHandler {
             transmission_handler_event_tx,
             simulation_controller_notifier,
             backoff_time,
-            last_header_update_time: SystemTime::UNIX_EPOCH // Set last update to 1970-01-01 00:00:00 UTC to make sure that the header will be updated on the first Command::UpdateHeader received
+            last_header_update_time: SystemTime::UNIX_EPOCH, // Set last update to 1970-01-01 00:00:00 UTC to make sure that the header will be updated on the first Command::UpdateHeader received
         }
     }
 
@@ -83,9 +83,10 @@ impl TransmissionHandler {
 
         // Send all packets at once
         for fragment in &self.fragments {
-            let packet = self.create_packet_for_fragment(fragment.clone(), source_routing_header.clone());
+            let packet =
+                self.create_packet_for_fragment(fragment.clone(), source_routing_header.clone());
             self.gateway.forward(packet);
-        };
+        }
 
         // wait for commands from transmitter
         loop {
@@ -95,20 +96,20 @@ impl TransmissionHandler {
                 match command {
                     Command::Resend(fragment_index) => {
                         self.process_resend_command(fragment_index, &mut source_routing_header);
-                    },
+                    }
                     Command::Confirmed(fragment_index) => {
                         if self.process_confirmed_command(fragment_index) {
                             let event = NodeEvent::MessageSentSuccessfully(self.message.clone());
                             self.simulation_controller_notifier.send_event(event);
-                            break
+                            break;
                         }
-                    },
+                    }
                     Command::UpdateHeader => {
                         self.process_update_header_command(&mut source_routing_header);
-                    },
+                    }
                     Command::Quit => {
                         break;
-                    },
+                    }
                 }
             } else {
                 panic!("Error while receiving Command's from transmitter");
@@ -118,18 +119,26 @@ impl TransmissionHandler {
         let event = Event::TransmissionCompleted(self.session_id);
         self.notify_transmitter(event);
 
-        log::info!("Transmission handler for session {} terminated", self.session_id);
+        log::info!(
+            "Transmission handler for session {} terminated",
+            self.session_id
+        );
     }
 
     /// Sends the specified `Fragment` again
-    fn process_resend_command(&self, fragment_index: u64, source_routing_header: &mut SourceRoutingHeader) {
+    fn process_resend_command(
+        &self,
+        fragment_index: u64,
+        source_routing_header: &mut SourceRoutingHeader,
+    ) {
         #[allow(clippy::cast_possible_truncation)]
         let fragment = self.fragments.get(fragment_index as usize);
         match fragment {
             Some(fragment) => {
-                let packet = self.create_packet_for_fragment(fragment.clone(), source_routing_header.clone());
+                let packet = self
+                    .create_packet_for_fragment(fragment.clone(), source_routing_header.clone());
                 self.gateway.forward(packet);
-            },
+            }
             None => {
                 log::warn!("TransmissionHandler for session {} received a command {:?} with fragment index {fragment_index} out of bounds", self.session_id, Command::Resend(fragment_index));
             }
@@ -155,7 +164,7 @@ impl TransmissionHandler {
                     *source_routing_header = self.find_new_routing_header();
                     self.last_header_update_time = SystemTime::now();
                 }
-            },
+            }
             Err(err) => {
                 panic!("{err:?}")
             }
@@ -166,7 +175,10 @@ impl TransmissionHandler {
     fn notify_transmitter(&self, event: Event) {
         match self.transmission_handler_event_tx.send(event) {
             Ok(()) => {
-                log::info!("Transmission handler for session {} sent an Event to transmitter", self.session_id);
+                log::info!(
+                    "Transmission handler for session {} sent an Event to transmitter",
+                    self.session_id
+                );
             }
             Err(err) => {
                 log::warn!("Transmission handler for session {} cannot send Event messages to transmitter. Error: {err:?}", self.session_id);
@@ -175,7 +187,11 @@ impl TransmissionHandler {
     }
 
     /// Creates a `Packet` with the passed arguments
-    fn create_packet_for_fragment(&self, fragment: Fragment, source_routing_header: SourceRoutingHeader) -> Packet {
+    fn create_packet_for_fragment(
+        &self,
+        fragment: Fragment,
+        source_routing_header: SourceRoutingHeader,
+    ) -> Packet {
         Packet {
             routing_header: source_routing_header,
             session_id: self.session_id,
@@ -189,10 +205,7 @@ impl TransmissionHandler {
         loop {
             let hops = self.network_controller.get_path(self.destination);
             if let Some(hops) = hops {
-                let source_routing_header = SourceRoutingHeader {
-                    hop_index: 0,
-                    hops,
-                };
+                let source_routing_header = SourceRoutingHeader { hop_index: 0, hops };
                 return source_routing_header;
             }
             thread::sleep(self.backoff_time);
@@ -205,18 +218,32 @@ mod tests {
     #![allow(unused_variables)]
     #![allow(unused_mut)]
 
-    use std::collections::HashMap;
-    use crossbeam_channel::unbounded;
     use super::*;
-    use messages::{ChatResponse, Message, MessageType, ResponseType};
-    use messages::TextResponse::Text;
-    use ntest::timeout;
-    use wg_2024::packet::{FloodResponse, NodeType, Packet, PacketType};
     use crate::transmitter::PacketCommand;
+    use crossbeam_channel::unbounded;
+    use messages::TextResponse::Text;
+    use messages::{ChatResponse, Message, MessageType, ResponseType};
+    use ntest::timeout;
+    use std::collections::HashMap;
+    use wg_2024::packet::{FloodResponse, NodeType, Packet, PacketType};
 
-    fn create_transmission_handler(message: &Message, node_id: NodeId, node_type: NodeType, destination_node_id: NodeId, paths: Vec<FloodResponse>, backoff_time: Duration) -> (TransmissionHandler, Receiver<Packet>, Receiver<NodeEvent>, Sender<Command>, Receiver<PacketCommand>) {
+    fn create_transmission_handler(
+        message: &Message,
+        node_id: NodeId,
+        node_type: NodeType,
+        destination_node_id: NodeId,
+        paths: Vec<FloodResponse>,
+        backoff_time: Duration,
+    ) -> (
+        TransmissionHandler,
+        Receiver<Packet>,
+        Receiver<NodeEvent>,
+        Sender<Command>,
+        Receiver<PacketCommand>,
+    ) {
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
+        let simulation_controller_notifier =
+            SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
 
         let mut connected_drones = HashMap::new();
@@ -226,11 +253,21 @@ mod tests {
 
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
 
-        let gateway = Gateway::new(0, connected_drones, gateway_to_transmitter_tx, simulation_controller_notifier.clone());
+        let gateway = Gateway::new(
+            0,
+            connected_drones,
+            gateway_to_transmitter_tx,
+            simulation_controller_notifier.clone(),
+        );
         let gateway = Arc::new(gateway);
 
         let (command_tx, command_rx) = unbounded::<Command>();
-        let network_controller = NetworkController::new(node_id, node_type, gateway.clone(), simulation_controller_notifier.clone());
+        let network_controller = NetworkController::new(
+            node_id,
+            node_type,
+            gateway.clone(),
+            simulation_controller_notifier.clone(),
+        );
         let network_controller = Arc::new(network_controller);
         let (transmission_handler_event_tx, transmission_handler_event_rx) = unbounded::<Event>();
 
@@ -249,7 +286,13 @@ mod tests {
             backoff_time,
         );
 
-        (transmission_handler, drone_rx, simulation_controller_rx, command_tx, gateway_to_transmitter_rx)
+        (
+            transmission_handler,
+            drone_rx,
+            simulation_controller_rx,
+            command_tx,
+            gateway_to_transmitter_rx,
+        )
     }
 
     #[test]
@@ -262,7 +305,20 @@ mod tests {
         };
 
         let paths = vec![];
-        let (transmission_handler, drone_rx, simulation_controller_rx, command_tx, gateway_to_transmitter_rx) = create_transmission_handler(&message, 0, NodeType::Server, 1, paths, Duration::from_millis(2000));
+        let (
+            transmission_handler,
+            drone_rx,
+            simulation_controller_rx,
+            command_tx,
+            gateway_to_transmitter_rx,
+        ) = create_transmission_handler(
+            &message,
+            0,
+            NodeType::Server,
+            1,
+            paths,
+            Duration::from_millis(2000),
+        );
 
         assert_eq!(message.destination, transmission_handler.destination);
         assert_eq!(message.session_id, transmission_handler.session_id);
@@ -279,14 +335,36 @@ mod tests {
         };
 
         let paths = vec![];
-        let (transmission_handler, drone_rx, simulation_controller_rx, command_tx, gateway_to_transmitter_rx) = create_transmission_handler(&message, 0, NodeType::Server, 1, paths, Duration::from_millis(2000));
+        let (
+            transmission_handler,
+            drone_rx,
+            simulation_controller_rx,
+            command_tx,
+            gateway_to_transmitter_rx,
+        ) = create_transmission_handler(
+            &message,
+            0,
+            NodeType::Server,
+            1,
+            paths,
+            Duration::from_millis(2000),
+        );
 
         let expected_packet = Packet {
             routing_header: Default::default(),
             session_id: 51,
             pack_type: PacketType::MsgFragment(transmission_handler.fragments[0].clone()),
         };
-        assert_eq!(expected_packet, transmission_handler.create_packet_for_fragment(transmission_handler.fragments[0].clone(), SourceRoutingHeader { hop_index: 0, hops: vec![] }))
+        assert_eq!(
+            expected_packet,
+            transmission_handler.create_packet_for_fragment(
+                transmission_handler.fragments[0].clone(),
+                SourceRoutingHeader {
+                    hop_index: 0,
+                    hops: vec![]
+                }
+            )
+        )
     }
 
     /*
@@ -331,19 +409,29 @@ mod tests {
             source: 0,
             destination: 1,
             session_id,
-            content: MessageType::Response(ResponseType::TextResponse(Text("My super long text response .....................".to_string()))),
+            content: MessageType::Response(ResponseType::TextResponse(Text(
+                "My super long text response .....................".to_string(),
+            ))),
         };
 
-        let paths = vec![
-            FloodResponse {
-                flood_id: 0,
-                path_trace: vec![
-                    (0, NodeType::Server),
-                    (1, NodeType::Drone),
-                ],
-            }
-        ];
-        let (mut transmission_handler, drone_rx, simulation_controller_rx, command_tx, gateway_to_transmitter_rx) = create_transmission_handler(&message, 0, NodeType::Server, 1, paths, Duration::from_millis(2000));
+        let paths = vec![FloodResponse {
+            flood_id: 0,
+            path_trace: vec![(0, NodeType::Server), (1, NodeType::Drone)],
+        }];
+        let (
+            mut transmission_handler,
+            drone_rx,
+            simulation_controller_rx,
+            command_tx,
+            gateway_to_transmitter_rx,
+        ) = create_transmission_handler(
+            &message,
+            0,
+            NodeType::Server,
+            1,
+            paths,
+            Duration::from_millis(2000),
+        );
 
         thread::spawn(move || {
             transmission_handler.run();
@@ -352,13 +440,17 @@ mod tests {
         let _ = command_tx.send(Command::Resend(0)).unwrap();
 
         let fragments = NaiveAssembler::disassemble(&message.stringify().into_bytes());
-        let expected_packets: Vec<Packet> = fragments.iter().map(|fragment: &Fragment|
-            Packet {
-                routing_header: SourceRoutingHeader { hop_index: 1, hops: vec![0, 1] },
+        let expected_packets: Vec<Packet> = fragments
+            .iter()
+            .map(|fragment: &Fragment| Packet {
+                routing_header: SourceRoutingHeader {
+                    hop_index: 1,
+                    hops: vec![0, 1],
+                },
                 session_id,
                 pack_type: PacketType::MsgFragment(fragment.clone()),
-            }
-        ).collect();
+            })
+            .collect();
 
         for expected_packet in &expected_packets {
             let received = drone_rx.recv().unwrap();
@@ -402,19 +494,29 @@ mod tests {
             source: 0,
             destination: 1,
             session_id,
-            content: MessageType::Response(ResponseType::TextResponse(Text("My super long text response .....................".to_string()))),
+            content: MessageType::Response(ResponseType::TextResponse(Text(
+                "My super long text response .....................".to_string(),
+            ))),
         };
 
-        let paths = vec![
-            FloodResponse {
-                flood_id: 0,
-                path_trace: vec![
-                    (0, NodeType::Server),
-                    (1, NodeType::Drone),
-                ],
-            }
-        ];
-        let (mut transmission_handler, drone_rx, simulation_controller_rx, command_tx, gateway_to_transmitter_rx) = create_transmission_handler(&message, 0, NodeType::Server, 1, paths, Duration::from_millis(2000));
+        let paths = vec![FloodResponse {
+            flood_id: 0,
+            path_trace: vec![(0, NodeType::Server), (1, NodeType::Drone)],
+        }];
+        let (
+            mut transmission_handler,
+            drone_rx,
+            simulation_controller_rx,
+            command_tx,
+            gateway_to_transmitter_rx,
+        ) = create_transmission_handler(
+            &message,
+            0,
+            NodeType::Server,
+            1,
+            paths,
+            Duration::from_millis(2000),
+        );
 
         let handle = thread::spawn(move || {
             transmission_handler.run();

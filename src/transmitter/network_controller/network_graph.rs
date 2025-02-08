@@ -110,7 +110,9 @@ impl NetworkGraph {
                 .unwrap()
                 .iter()
                 .position(|node_id| *node_id == remove_connections_from)
-            else { panic!("Node not found") };
+            else {
+                panic!("Node not found")
+            };
 
             neighbor
                 .read()
@@ -153,7 +155,10 @@ impl NetworkGraph {
     pub(super) fn insert_bidirectional_edge(&self, from: NodeId, to: NodeId) {
         let nodes = self.nodes.read().unwrap();
 
-        let Some(node_from) = nodes.iter().find(|node| node.read().unwrap().node_id == from) else {
+        let Some(node_from) = nodes
+            .iter()
+            .find(|node| node.read().unwrap().node_id == from)
+        else {
             panic!("Node with node_id {from} does not exist");
         };
 
@@ -214,10 +219,7 @@ impl NetworkGraph {
                 // just ignore this case?
                 // It may arise when an old Nack::Dropped is received after resetting the
                 // graph and flooding it again
-                log::info!(
-                    "Ignoring old {:?}: graph has been reset",
-                    NackType::Dropped
-                );
+                log::info!("Ignoring old {:?}: graph has been reset", NackType::Dropped);
             }
         }
     }

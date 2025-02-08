@@ -1,13 +1,13 @@
 mod network_graph;
 
-use std::sync::{Arc, RwLock};
-use messages::node_event::{EventNetworkGraph, EventNetworkNode, NodeEvent};
-use rand::Rng;
-use wg_2024::network::NodeId;
-use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType};
-use ap_sc_notifier::SimulationControllerNotifier;
 use crate::transmitter::gateway::Gateway;
 use crate::transmitter::network_controller::network_graph::NetworkGraph;
+use ap_sc_notifier::SimulationControllerNotifier;
+use messages::node_event::{EventNetworkGraph, EventNetworkNode, NodeEvent};
+use rand::Rng;
+use std::sync::{Arc, RwLock};
+use wg_2024::network::NodeId;
+use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType};
 
 #[derive(Debug)]
 pub struct NetworkController {
@@ -21,7 +21,11 @@ pub struct NetworkController {
 impl PartialEq for NetworkController {
     fn eq(&self, other: &Self) -> bool {
         self.node_id == other.node_id
-            && self.network_graph.read().unwrap().eq(&other.network_graph.read().unwrap())
+            && self
+                .network_graph
+                .read()
+                .unwrap()
+                .eq(&other.network_graph.read().unwrap())
             && self.gateway.eq(&other.gateway)
     }
 }
@@ -32,13 +36,13 @@ impl NetworkController {
         node_type: NodeType,
         gateway: Arc<Gateway>,
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
-    )-> Self {
+    ) -> Self {
         Self {
             node_id,
             node_type,
             network_graph: RwLock::new(NetworkGraph::new(node_id, node_type)),
             gateway,
-            simulation_controller_notifier
+            simulation_controller_notifier,
         }
     }
 
@@ -62,7 +66,10 @@ impl NetworkController {
 
     /// Updates the known topology with the given `FloodResponse`
     pub fn update_from_flood_response(&self, flood_response: &FloodResponse) {
-        self.network_graph.read().unwrap().insert_edges_from_path_trace(&flood_response.path_trace);
+        self.network_graph
+            .read()
+            .unwrap()
+            .insert_edges_from_path_trace(&flood_response.path_trace);
 
         self.send_known_network_graph();
     }
@@ -72,7 +79,10 @@ impl NetworkController {
         match nack.nack_type {
             NackType::ErrorInRouting(next_hop) => {
                 // remove edge between next_hop and source
-                self.network_graph.read().unwrap().delete_bidirectional_edge(source, next_hop);
+                self.network_graph
+                    .read()
+                    .unwrap()
+                    .delete_bidirectional_edge(source, next_hop);
                 self.send_known_network_graph();
             }
             NackType::DestinationIsDrone | NackType::UnexpectedRecipient(_) => {
@@ -83,7 +93,10 @@ impl NetworkController {
             }
             NackType::Dropped => {
                 // Update num_of_dropped_packets
-                self.network_graph.read().unwrap().increment_num_of_dropped_packets(source);
+                self.network_graph
+                    .read()
+                    .unwrap()
+                    .increment_num_of_dropped_packets(source);
             }
         }
     }
@@ -122,24 +135,31 @@ impl NetworkController {
             nodes.push(result_node);
         }
 
-        EventNetworkGraph {
-            nodes
-        }
+        EventNetworkGraph { nodes }
     }
 
     /// Inserts a new neighbor to the current node in the known topology
     pub fn insert_neighbor(&self, to: NodeId) {
-        self.network_graph.read().unwrap().insert_bidirectional_edge(self.node_id, to);
+        self.network_graph
+            .read()
+            .unwrap()
+            .insert_bidirectional_edge(self.node_id, to);
     }
 
     /// Deletes a neighbor to the current node in the known topology
     pub fn delete_neighbor_edge(&self, to: NodeId) {
-        self.network_graph.read().unwrap().delete_bidirectional_edge(self.node_id, to);
+        self.network_graph
+            .read()
+            .unwrap()
+            .delete_bidirectional_edge(self.node_id, to);
     }
 
     /// Increments the number of dropped packets of the given `node_id`
     pub fn increment_dropped_count(&self, node_id: NodeId) {
-        self.network_graph.read().unwrap().increment_num_of_dropped_packets(node_id);
+        self.network_graph
+            .read()
+            .unwrap()
+            .increment_num_of_dropped_packets(node_id);
     }
 }
 
@@ -148,13 +168,13 @@ mod tests {
     #![allow(unused_variables)]
     #![allow(unused_mut)]
 
-    use std::collections::HashMap;
+    use super::*;
+    use ap_sc_notifier::SimulationControllerNotifier;
     use crossbeam_channel::{unbounded, Sender};
     use ntest::timeout;
+    use std::collections::HashMap;
     use wg_2024::network::SourceRoutingHeader;
     use wg_2024::packet::{Nack, Packet, PacketType};
-    use ap_sc_notifier::SimulationControllerNotifier;
-    use super::*;
 
     #[test]
     fn initialize() {
@@ -162,15 +182,26 @@ mod tests {
         let node_type = NodeType::Server;
 
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
+        let simulation_controller_notifier =
+            SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
 
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
 
-        let gateway = Gateway::new(node_id, HashMap::new(), gateway_to_transmitter_tx, simulation_controller_notifier.clone());
+        let gateway = Gateway::new(
+            node_id,
+            HashMap::new(),
+            gateway_to_transmitter_tx,
+            simulation_controller_notifier.clone(),
+        );
         let gateway = Arc::new(gateway);
 
-        let network_controller = NetworkController::new(node_id, node_type, gateway.clone(), simulation_controller_notifier.clone());
+        let network_controller = NetworkController::new(
+            node_id,
+            node_type,
+            gateway.clone(),
+            simulation_controller_notifier.clone(),
+        );
 
         let expected = NetworkController {
             node_id,
@@ -189,15 +220,26 @@ mod tests {
         let node_type = NodeType::Server;
 
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
+        let simulation_controller_notifier =
+            SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
 
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
 
-        let gateway = Gateway::new(node_id, HashMap::new(), gateway_to_transmitter_tx, simulation_controller_notifier.clone());
+        let gateway = Gateway::new(
+            node_id,
+            HashMap::new(),
+            gateway_to_transmitter_tx,
+            simulation_controller_notifier.clone(),
+        );
         let gateway = Arc::new(gateway);
 
-        let mut network_controller = NetworkController::new(node_id, node_type, gateway, simulation_controller_notifier.clone());
+        let mut network_controller = NetworkController::new(
+            node_id,
+            node_type,
+            gateway,
+            simulation_controller_notifier.clone(),
+        );
 
         /*
         | --------|
@@ -266,15 +308,26 @@ mod tests {
         let node_type = NodeType::Server;
 
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
+        let simulation_controller_notifier =
+            SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
 
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
 
-        let gateway = Gateway::new(node_id, HashMap::new(), gateway_to_transmitter_tx, simulation_controller_notifier.clone());
+        let gateway = Gateway::new(
+            node_id,
+            HashMap::new(),
+            gateway_to_transmitter_tx,
+            simulation_controller_notifier.clone(),
+        );
         let gateway = Arc::new(gateway);
 
-        let mut network_controller = NetworkController::new(node_id, node_type, gateway, simulation_controller_notifier.clone());
+        let mut network_controller = NetworkController::new(
+            node_id,
+            node_type,
+            gateway,
+            simulation_controller_notifier.clone(),
+        );
 
         let flood_response = FloodResponse {
             flood_id: 0,
@@ -323,7 +376,7 @@ mod tests {
         let node_id = 0;
         let node_type = NodeType::Server;
 
-        let mut connected_drones:HashMap<NodeId, Sender<Packet>> = HashMap::new();
+        let mut connected_drones: HashMap<NodeId, Sender<Packet>> = HashMap::new();
 
         let drone_1_node_id = 1;
         let (drone_1_tx, drone_1_rx) = unbounded::<Packet>();
@@ -334,15 +387,26 @@ mod tests {
         connected_drones.insert(drone_2_node_id, drone_2_tx);
 
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
+        let simulation_controller_notifier =
+            SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
 
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
 
-        let gateway = Gateway::new(node_id, connected_drones, gateway_to_transmitter_tx, simulation_controller_notifier.clone());
+        let gateway = Gateway::new(
+            node_id,
+            connected_drones,
+            gateway_to_transmitter_tx,
+            simulation_controller_notifier.clone(),
+        );
         let gateway = Arc::new(gateway);
 
-        let mut network_controller = NetworkController::new(node_id, node_type, gateway, simulation_controller_notifier.clone());
+        let mut network_controller = NetworkController::new(
+            node_id,
+            node_type,
+            gateway,
+            simulation_controller_notifier.clone(),
+        );
 
         network_controller.flood_network();
 
@@ -382,15 +446,26 @@ mod tests {
         let connected_drones = HashMap::new();
 
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
+        let simulation_controller_notifier =
+            SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
 
         let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
 
-        let gateway = Gateway::new(node_id, connected_drones, gateway_to_transmitter_tx, simulation_controller_notifier.clone());
+        let gateway = Gateway::new(
+            node_id,
+            connected_drones,
+            gateway_to_transmitter_tx,
+            simulation_controller_notifier.clone(),
+        );
         let gateway = Arc::new(gateway);
 
-        let network_controller = NetworkController::new(node_id, node_type, gateway, simulation_controller_notifier.clone());
+        let network_controller = NetworkController::new(
+            node_id,
+            node_type,
+            gateway,
+            simulation_controller_notifier.clone(),
+        );
 
         let flood_response = FloodResponse {
             flood_id: 0,
@@ -415,7 +490,17 @@ mod tests {
         // };
         network_controller.update_from_nack(&nack, 1);
 
-        assert_eq!(network_controller.network_graph.read().unwrap().nodes.read().unwrap().len(), 1);
+        assert_eq!(
+            network_controller
+                .network_graph
+                .read()
+                .unwrap()
+                .nodes
+                .read()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     /*
