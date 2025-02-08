@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::thread;
+use std::{panic, thread};
 use std::time::{Duration, SystemTime};
 use crossbeam_channel::{select_biased, unbounded, Receiver, Sender};
 use messages::Message;
@@ -21,19 +21,19 @@ mod single_packet_transmission_handler;
 #[derive(Debug)]
 pub struct Transmitter {
     node_id: NodeId,
-    listener_rx: Receiver<PacketCommand>,
+    listener_to_transmitter_rx: Receiver<PacketCommand>,
     gateway_to_transmitter_rx: Receiver<PacketCommand>,
-    server_logic_rx: Receiver<Message>,
+    logic_to_transmitter_rx: Receiver<Message>,
     network_controller: Arc<NetworkController>,
     transmission_handlers: HashMap<u64, Sender<TransmissionHandlerCommand>>,
     transmission_handler_event_rx: Receiver<TransmissionHandlerEvent>,
-    transmission_handler_event_tx: Sender<TransmissionHandlerEvent>,
+    transmission_handler_event_tx: Sender<TransmissionHandlerEvent>, // stores the channel to pass to every transmission handler to send TransmissionHandlerEvent
     gateway: Arc<Gateway>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
-    transmitter_command_rx: Receiver<Command>,
+    command_rx: Receiver<Command>,
     last_flood_timestamp: SystemTime,
     flood_interval: Duration,
-    server_to_transmitter_drone_command_rx: Receiver<DroneCommand>,
+    logic_to_transmitter_drone_command_rx: Receiver<DroneCommand>,
 }
 
 impl PartialEq for Transmitter {
@@ -58,8 +58,6 @@ pub enum PacketCommand {
 #[derive(Debug, Clone)]
 pub enum Command {
     Quit,
-    // AddNeighbor(NodeId, Sender<Packet>),
-    // RemoveNeighbor(NodeId),
 }
 
 impl Transmitter {
@@ -84,19 +82,19 @@ impl Transmitter {
 
         Self {
             node_id,
-            listener_rx,
+            listener_to_transmitter_rx: listener_rx,
             gateway_to_transmitter_rx,
-            server_logic_rx,
+            logic_to_transmitter_rx: server_logic_rx,
             network_controller: Arc::new(NetworkController::new(node_id, node_type, gateway.clone(), simulation_controller_notifier.clone())),
             transmission_handlers: HashMap::new(),
             transmission_handler_event_tx,
             transmission_handler_event_rx,
             gateway,
             simulation_controller_notifier,
-            transmitter_command_rx,
+            command_rx: transmitter_command_rx,
             last_flood_timestamp: SystemTime::UNIX_EPOCH,
             flood_interval,
-            server_to_transmitter_drone_command_rx
+            logic_to_transmitter_drone_command_rx: server_to_transmitter_drone_command_rx
         }
     }
 
@@ -107,12 +105,21 @@ impl Transmitter {
     }
 
     /// Starts the `Transmitter`, allowing it to process any message sent to it
+    /// # Panics
+    /// - Panics if the transmitter end of one of the Receiver channels gets unexpectedly dropped
+    /// - Panics if an unsupported DroneCommand is received
     pub fn run(&mut self) {
+        panic::set_hook(Box::new(|info| {
+            let panic_msg = format!("Panic occurred: {info}");
+            log::error!("{panic_msg}");
+            eprintln!("{panic_msg}");
+        }));
+
         loop {
             // Periodically flood the network
             self.flood_if_enough_time_elapsed();
             select_biased! {
-                recv(self.server_to_transmitter_drone_command_rx) -> drone_command => {
+                recv(self.logic_to_transmitter_drone_command_rx) -> drone_command => {
                     if let Ok(drone_command) = drone_command {
                         match drone_command {
                             DroneCommand::AddSender(node_id, channel) => {
@@ -120,7 +127,7 @@ impl Transmitter {
                                 self.gateway.add_neighbor(node_id, channel);
                             },
                             DroneCommand::RemoveSender(node_id) => {
-                                self.network_controller.delete_edge(node_id);
+                                self.network_controller.delete_neighbor_edge(node_id);
                                 self.gateway.remove_neighbor(node_id);
                             },
                             DroneCommand::SetPacketDropRate(_)
@@ -132,7 +139,7 @@ impl Transmitter {
                         panic!("Error while receiving DroneCommand from server");
                     }
                 },
-                recv(self.transmitter_command_rx) -> command => {
+                recv(self.command_rx) -> command => {
                     if let Ok(command) = command {
                         match command {
                             Command::Quit => {
@@ -142,23 +149,13 @@ impl Transmitter {
                                 }
                                 break
                             },
-                            /*
-                            Command::AddNeighbor(node_id, channel) => {
-                                self.network_controller.insert_neighbor(node_id);
-                                self.gateway.add_neighbor(node_id, channel);
-                            },
-                            Command::RemoveNeighbor(node_id) => {
-                                self.network_controller.delete_edge(node_id);
-                                self.gateway.remove_neighbor(node_id);
-                            },
-                             */
                         }
                     }
                     panic!("Error while receiving Command");
                 },
-                recv(self.listener_rx) -> command => {
+                recv(self.listener_to_transmitter_rx) -> command => {
                     if let Ok(command) = command {
-                        self.process_logic_command(command);
+                        self.process_packet_command(command);
                     } else {
                         panic!("Error while receiving from listener_channel");
                     }
@@ -170,7 +167,7 @@ impl Transmitter {
                         panic!("Error while receiving from gateway")
                     }
                 },
-                recv(self.server_logic_rx) -> message_data => {
+                recv(self.logic_to_transmitter_rx) -> message_data => {
                     if let Ok(message) = message_data {
                         self.process_high_level_message(message);
                     } else {
@@ -189,6 +186,8 @@ impl Transmitter {
 
     /// Floods the network if the last flooding was done at least `self.flood_interval` time ago
     /// Note: the previous known network gets deleted
+    /// # Panics
+    /// Panics if SystemTime::elapsed(&self) fails
     fn flood_if_enough_time_elapsed(&mut self) {
         match self.last_flood_timestamp.elapsed() {
             Ok(elapsed) => {
@@ -205,6 +204,8 @@ impl Transmitter {
     }
 
     /// Processes a `Message` received from the logic channel
+    /// # Panics
+    /// Panics if a new thread cannot be created
     fn process_high_level_message(&mut self, message: Message) {
         let (command_tx, command_rx) = unbounded::<TransmissionHandlerCommand>();
 
@@ -224,30 +225,33 @@ impl Transmitter {
             .spawn(move || {
                 transmission_handler.run();
             })
-            .unwrap();
+            .unwrap_or_else(|_| panic!("Cannot create 'transmission_handler_{session_id}' thread"));
 
         self.transmission_handlers.insert(session_id, command_tx);
     }
 
     /// Processes a `TransmitterInternalCommand` received from `Gateway`
+    /// # Panics
+    /// - Panics if a PacketCommand different from PacketCommand::SendNack is received
+    /// - Panics if PacketCommand::SendNack contains a NACK type different from NackType::ErrorInRouting(_) or NackType::UnexpectedRecipient(_)
     fn process_gateway_command(&self, command: PacketCommand) {
         if let PacketCommand::SendNack { session_id: _session_id, nack, destination: _destination } = &command {
             match &nack.nack_type {
                 NackType::ErrorInRouting(_) | NackType::UnexpectedRecipient(_) => {
-                    self.process_logic_command(command);
+                    self.process_packet_command(command);
                 },
-                _ => {
-                    log::error!("Unexpected NACK type received from gateway for error propagation");
-                    panic!("Unexpected NACK type received from gateway for error propagation");
+                nack => {
+                    panic!("Unexpected NACK type ({nack:?}) received from gateway for error propagation");
                 },
             }
         } else {
-            log::error!("Received unexpected command from gateway: {command:?}");
-            panic!("Received unexpected command from gateway: {command:?}");
+            panic!("Received unexpected PacketCommand from gateway: {command:?}");
         }
     }
 
     /// Sends a `TransmissionHandlerCommand` to the `TransmissionHandler` associated to the given `session_id`
+    /// # Panics
+    /// Panics if the communication to the required TransmissionHandler fails
     fn send_transmission_handler_command(&self, session_id: u64, command: TransmissionHandlerCommand, source: NodeId) {
         let Some(handler_channel) = self.transmission_handlers.get(&session_id)
         else {
@@ -266,36 +270,18 @@ impl Transmitter {
         match handler_channel.send(command) {
             Ok(()) => {},
             Err(err) => {
-                log::error!("Cannot communicate with handler for session_id {session_id}. Error: {err:?}");
                 panic!("Cannot communicate with handler for session_id {session_id}. Error: {err:?}");
             }
         }
     }
 
-    /// Processes a `TransmitterInternalCommand`
-    fn process_logic_command(&self, command: PacketCommand) {
+    /// Processes a `PacketCommand` based on the variant
+    fn process_packet_command(&self, command: PacketCommand) {
         match command {
-            PacketCommand::SendAckFor { session_id, fragment_index, destination} => {
-                let ack = Ack {
-                    fragment_index,
-                };
-
+            PacketCommand::SendAckFor { session_id, fragment_index, destination } => {
+                let ack = Ack { fragment_index };
                 let packet_type = PacketType::Ack(ack);
-
-                let handler = SinglePacketTransmissionHandler::new(
-                    packet_type,
-                    session_id,
-                    self.gateway.clone(),
-                    self.network_controller.clone(),
-                    Duration::from_millis(2000),
-                );
-
-                thread::Builder::new()
-                    .name(format!("single_packet_transmission_handler_{session_id}"))
-                    .spawn(move || {
-                        handler.send_packet(destination);
-                    })
-                    .unwrap();
+                self.spawn_single_packet_transmission_handler_thread(session_id, destination, packet_type);
             }
             PacketCommand::ForwardAckTo { session_id, ack, source } => {
                 let command = TransmissionHandlerCommand::Confirmed(ack.fragment_index);
@@ -304,23 +290,9 @@ impl Transmitter {
             PacketCommand::ProcessNack { session_id, nack, source } => {
                 self.process_nack(session_id, &nack, source);
             }
-            PacketCommand::SendNack { session_id, nack, destination} => {
+            PacketCommand::SendNack { session_id, nack, destination } => {
                 let packet_type = PacketType::Nack(nack);
-
-                let handler = SinglePacketTransmissionHandler::new(
-                    packet_type,
-                    session_id,
-                    self.gateway.clone(),
-                    self.network_controller.clone(),
-                    Duration::from_millis(2000),
-                );
-
-                thread::Builder::new()
-                    .name(format!("single_packet_transmission_handler_{session_id}"))
-                    .spawn(move || {
-                        handler.send_packet(destination);
-                    })
-                    .unwrap();
+                self.spawn_single_packet_transmission_handler_thread(session_id, destination, packet_type);
             }
             PacketCommand::ProcessFloodRequest(flood_request) => {
                 self.process_flood_request(flood_request);
@@ -329,6 +301,26 @@ impl Transmitter {
                 self.network_controller.update_from_flood_response(&flood_response);
             }
         }
+    }
+
+    /// Spawns a SinglePacketTransmissionHandler for the PacketType argument
+    /// # Panic
+    /// Panics if a new thread cannot be spawned
+    fn spawn_single_packet_transmission_handler_thread(&self, session_id: u64, destination: NodeId, packet_type: PacketType) {
+        let handler = SinglePacketTransmissionHandler::new(
+            packet_type,
+            session_id,
+            self.gateway.clone(),
+            self.network_controller.clone(),
+            Duration::from_millis(2000),
+        );
+
+        thread::Builder::new()
+            .name(format!("single_packet_transmission_handler_{session_id}"))
+            .spawn(move || {
+                handler.send_packet(destination);
+            })
+            .unwrap_or_else(|_| panic!("Cannot create 'transmission_handler_{session_id}' thread"));
     }
 
     /// Processes a `FloodRequest`, sending a `FloodResponse` back to the initiator
@@ -381,6 +373,7 @@ impl Transmitter {
 #[cfg(test)]
 mod tests {
     #![allow(unused_variables)]
+    #![allow(unused_mut)]
 
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -471,19 +464,19 @@ mod tests {
 
         let expected = Transmitter {
             node_id,
-            listener_rx,
+            listener_to_transmitter_rx: listener_rx,
             gateway_to_transmitter_rx,
-            server_logic_rx,
+            logic_to_transmitter_rx: server_logic_rx,
             network_controller: Arc::new(NetworkController::new(node_id, node_type, gateway.clone(), simulation_controller_notifier.clone())),
             transmission_handlers: Default::default(),
             transmission_handler_event_rx: transmission_handler_to_transmitter_event_rx,
             transmission_handler_event_tx: transmission_handler_to_transmitter_event_tx,
             gateway: gateway.clone(),
             simulation_controller_notifier: Arc::new(SimulationControllerNotifier::new(simulation_controller_tx)),
-            transmitter_command_rx,
+            command_rx: transmitter_command_rx,
             last_flood_timestamp: SystemTime::UNIX_EPOCH,
             flood_interval: Duration::from_secs(60),
-            server_to_transmitter_drone_command_rx,
+            logic_to_transmitter_drone_command_rx: server_to_transmitter_drone_command_rx,
         };
 
         assert_eq!(transmitter, expected);
@@ -578,7 +571,7 @@ mod tests {
 
         sleep(Duration::from_millis(200));
 
-        transmitter_command_tx.send(Command::Quit);
+        let _ = transmitter_command_tx.send(Command::Quit);
 
         handle.join()
     }

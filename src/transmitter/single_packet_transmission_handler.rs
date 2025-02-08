@@ -53,6 +53,9 @@ impl SinglePacketTransmissionHandler {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_variables)]
+    #![allow(unused_mut)]
+
     use super::*;
     use std::collections::HashMap;
     use std::thread::spawn;

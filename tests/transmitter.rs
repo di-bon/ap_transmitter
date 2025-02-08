@@ -1,4 +1,5 @@
 #![allow(unused_variables)]
+#![allow(unused_mut)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -241,13 +242,13 @@ fn check_unexpected_ack() {
 
     thread::sleep(Duration::from_millis(20));
 
-    let mut flood_id = 0;
+    // let mut flood_id = 0;
     for (id, rx) in &drones_rx {
         let received = rx.recv().expect(&format!("Error while receiving a message in drone {id}"));
         assert!(matches!(received.pack_type, PacketType::FloodRequest(_)));
-        if let PacketType::FloodRequest(flood_request) = received.pack_type {
-            flood_id = flood_request.flood_id;
-        }
+        // if let PacketType::FloodRequest(flood_request) = received.pack_type {
+        //     flood_id = flood_request.flood_id;
+        // }
         let event = simulation_controller_rx.recv().unwrap();
         assert!(matches!(event, NodeEvent::PacketSent(_)));
     }

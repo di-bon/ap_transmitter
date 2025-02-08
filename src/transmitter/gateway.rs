@@ -55,9 +55,8 @@ impl Gateway {
     }
 
     /// Sends a `Packet` on the given channel.
-    ///
     /// If `channel.send` fails, it sends an `ErrorInRouting`
-    /// (using `TransmitterInternalCommand::ProcessNack`) back to the `Transmitter`
+    /// (using `PacketCommand::ProcessNack`) back to the `Transmitter`
     fn send_on_channel_checked(&self, channel: &Sender<Packet>, packet: Packet, next_hop: NodeId) {
         match channel.send(packet.clone()) {
             Ok(()) => {
@@ -81,13 +80,12 @@ impl Gateway {
         }
     }
 
-    /// Sends a `FloodResponse` to a neighbor based on the `path_trace`
+    /// Sends a FloodResponse to a neighbor after creating a SourceRoutingHeader from the path_trace information
     /// # Panics
     /// - Panics if the `path_trace` does not have a next hop to forward the response
     /// - Panics if there is no channel for the required next hop
     pub fn send_flood_response(&self, flood_response: FloodResponse) {
         let Some((forward_to, _node_type)) = flood_response.path_trace.get(1).copied() else {
-            log::error!("No next hop in path trace to forward back this FloodResponse");
             panic!("No next hop in path trace to forward back this FloodResponse");
         };
 
@@ -107,7 +105,6 @@ impl Gateway {
 
         let binding = self.neighbors.read().unwrap();
         let Some(channel) = binding.get(&forward_to) else {
-            log::error!("No channel found to forward the flood response back to who sent it");
             panic!("No channel found to forward the flood response back to who sent it");
         };
 
@@ -121,7 +118,6 @@ impl Gateway {
     /// - Panics if there is no channel associated to the required next hop
     pub fn forward(&self, mut packet: Packet) {
         let Some(next_hop) = packet.routing_header.next_hop() else {
-            log::error!("No next hop for packet {packet}");
             panic!("No next hop for packet {packet}");
         };
 
@@ -130,7 +126,6 @@ impl Gateway {
         if let Some(channel) = self.neighbors.read().unwrap().get(&next_hop) {
             self.send_on_channel_checked(channel, packet, next_hop);
         } else {
-            log::error!("No channel for required next hop ({next_hop}) for packet {packet}");
             panic!("No channel for required next hop ({next_hop}) for packet {packet}");
         }
     }
@@ -147,20 +142,19 @@ impl Gateway {
     /// Removes a channel from the connected neighbors
     pub fn remove_neighbor(&self, node_id: NodeId) {
         if self.neighbors.write().unwrap().remove(&node_id).is_some() {
-            log::info!("Remove neighbor's channel associated to NodeId {node_id}");
+            log::info!("Removed neighbor's channel associated to NodeId {node_id}");
         } else {
             log::warn!("Cannot remove neighbor's channel associated to NodeId {node_id}: there is no channel to remove");
         }
     }
 
-    /// Sends a `TransmitterInternalCommand` to `Transmitter`
+    /// Sends a `PacketCommand` to `Transmitter`
     /// # Panics
     /// - Panics if the communication fails
     pub fn send_command_to_transmitter(&self, command: PacketCommand) {
         match self.gateway_to_transmitter_tx.send(command) {
             Ok(()) => {}
             Err(SendError(command)) => {
-                log::error!("Cannot send {command:?} to transmitter");
                 panic!("Cannot send {command:?} to transmitter");
             }
         }
@@ -170,6 +164,7 @@ impl Gateway {
 #[cfg(test)]
 mod test {
     #![allow(unused_variables)]
+    #![allow(unused_mut)]
 
     use super::*;
     use crossbeam_channel::unbounded;

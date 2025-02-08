@@ -6,9 +6,7 @@ use wg_2024::packet::NodeType;
 pub struct NetworkNode {
     pub node_id: NodeId,
     pub node_type: NodeType,
-    pub num_of_dropped_packets: u64, // TODO: maybe it is useful to add some timestamps or whatever
-    // to delete old dropped packets, so that if an unreliable drone gets its pdr changed it get
-    // selected during the path finding part, or vice versa, if a reliable drone gets its pdr raised
+    pub num_of_dropped_packets: u64,
     pub neighbors: RwLock<Vec<NodeId>>,
 }
 
@@ -59,19 +57,19 @@ impl NetworkNode {
         }
     }
 
-    /// Increments the `num_of_dropped_packets` field
+    /// Increments `self.num_of_dropped_packets` by 1
     pub fn increment_dropped_packets(&mut self) {
         self.num_of_dropped_packets += 1;
         log::info!("num_of_dropped_packets incremented");
     }
 
-    /// Set the `num_of_dropped_packets` to `0`
+    /// Sets `self.num_of_dropped_packets` to `0`
     pub fn reset_num_of_dropped_packets(&mut self) {
         self.num_of_dropped_packets = 0;
         log::info!("num_of_dropped_packets reset to 0");
     }
 
-    /// Returns the value of `num_of_dropped_packets` field
+    /// Returns the value of `self.num_of_dropped_packets`
     pub fn get_num_of_dropped_packets(&self) -> u64 {
         self.num_of_dropped_packets
     }
@@ -80,6 +78,7 @@ impl NetworkNode {
 #[cfg(test)]
 mod tests {
     #![allow(unused_variables)]
+    #![allow(unused_mut)]
 
     use super::*;
 

@@ -42,6 +42,7 @@ impl NetworkController {
         }
     }
 
+    /// Floods the network with `FloodRequest`s
     pub fn flood_network(&self) {
         let mut rng = rand::rng();
         let _session_id: u64 = rng.random(); // TODO: decide if this is needed
@@ -52,16 +53,21 @@ impl NetworkController {
         self.gateway.send_flood_request(flood_request);
     }
 
+    /// Computes the path to a given node
+    /// # Return
+    /// Return the path to a node if it exists, None otherwise
     pub fn get_path(&self, to: NodeId) -> Option<Vec<NodeId>> {
         self.network_graph.read().unwrap().get_path_to(to)
     }
 
+    /// Updates the known topology with the given FloodResponse
     pub fn update_from_flood_response(&self, flood_response: &FloodResponse) {
         self.network_graph.read().unwrap().insert_edges_from_path_trace(&flood_response.path_trace);
 
         self.send_known_network_graph();
     }
 
+    /// Updates the topology information with the given Nack
     pub fn update_from_nack(&self, nack: &Nack, source: NodeId) {
         match nack.nack_type {
             NackType::ErrorInRouting(next_hop) => {
@@ -82,6 +88,7 @@ impl NetworkController {
         }
     }
 
+    /// Sends the known topology to the Simulation Controller
     fn send_known_network_graph(&self) {
         let event_graph = self.get_event_graph();
         let event = NodeEvent::KnownNetworkGraph {
@@ -91,6 +98,7 @@ impl NetworkController {
         self.simulation_controller_notifier.send_event(event);
     }
 
+    /// Generates the EventNetworkGraph of the current topology
     fn get_event_graph(&self) -> EventNetworkGraph {
         let mut nodes = vec![];
 
@@ -119,14 +127,17 @@ impl NetworkController {
         }
     }
 
+    /// Inserts a new neighbor to the current node in the known topology
     pub fn insert_neighbor(&self, to: NodeId) {
         self.network_graph.read().unwrap().insert_bidirectional_edge(self.node_id, to);
     }
 
-    pub fn delete_edge(&self, to: NodeId) {
+    /// Deletes a neighbor to the current node in the known topology
+    pub fn delete_neighbor_edge(&self, to: NodeId) {
         self.network_graph.read().unwrap().delete_bidirectional_edge(self.node_id, to);
     }
 
+    /// Increments the number of dropped packets of the given node_id
     pub fn increment_dropped_count(&self, node_id: NodeId) {
         self.network_graph.read().unwrap().increment_num_of_dropped_packets(node_id);
     }
@@ -135,6 +146,7 @@ impl NetworkController {
 #[cfg(test)]
 mod tests {
     #![allow(unused_variables)]
+    #![allow(unused_mut)]
 
     use std::collections::HashMap;
     use crossbeam_channel::{unbounded, Sender};

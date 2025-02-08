@@ -72,6 +72,9 @@ impl TransmissionHandler {
         }
     }
 
+    /// Starts the TransmissionHandler, allowing it to transmit its Message
+    /// # Panics
+    /// Panics if the command channel between Transmitter and the current TransmissionHandler gets unexpectedly dropped
     pub fn run(&mut self) {
         let mut source_routing_header = self.find_new_routing_header();
 
@@ -108,8 +111,7 @@ impl TransmissionHandler {
                     },
                 }
             } else {
-                log::error!("Error while receiving commands from transmitter");
-                panic!("Error while receiving commands from transmitter");
+                panic!("Error while receiving Command's from transmitter");
             }
         }
 
@@ -119,6 +121,7 @@ impl TransmissionHandler {
         log::info!("Transmission handler for session {} terminated", self.session_id);
     }
 
+    /// Sends the specified Fragment again
     fn process_resend_command(&self, fragment_index: u64, source_routing_header: &mut SourceRoutingHeader) {
         #[allow(clippy::cast_possible_truncation)]
         let fragment = self.fragments.get(fragment_index as usize);
@@ -133,11 +136,17 @@ impl TransmissionHandler {
         }
     }
 
+    /// Adds the fragment_index to the set of ACKed fragments
+    /// # Return
+    /// Returns true if every fragment has been ACKed
     fn process_confirmed_command(&mut self, fragment_index: u64) -> bool {
         self.received_acks.insert(fragment_index);
         self.received_acks.len() == self.fragments.len()
     }
 
+    /// Updates the header if enough time (Duration::from_millis(100)) has elapsed since the last header update
+    /// # Panics
+    /// Panics if SystemTime::elapsed(&self) fails
     fn process_update_header_command(&mut self, source_routing_header: &mut SourceRoutingHeader) {
         match self.last_header_update_time.elapsed() {
             Ok(elapsed) => {
@@ -147,17 +156,16 @@ impl TransmissionHandler {
                 }
             },
             Err(err) => {
-                log::error!("{}", err.to_string());
-                panic!("{}", err.to_string())
+                panic!("{err:?}")
             }
         }
     }
 
+    /// Sends an Event to transmitter
     fn notify_transmitter(&self, event: Event) {
-        log::info!("Transmission handler for session {} is sending {:?} to transmitter", self.session_id, event);
         match self.transmission_handler_event_tx.send(event) {
             Ok(()) => {
-                log::info!("Transmission handler for session {} sent a Event to transmitter", self.session_id);
+                log::info!("Transmission handler for session {} sent an Event to transmitter", self.session_id);
             }
             Err(err) => {
                 log::warn!("Transmission handler for session {} cannot send Event messages to transmitter. Error: {err:?}", self.session_id);
@@ -165,6 +173,7 @@ impl TransmissionHandler {
         }
     }
 
+    /// Creates a Packet with the passed arguments
     fn create_packet_for_fragment(&self, fragment: Fragment, source_routing_header: SourceRoutingHeader) -> Packet {
         Packet {
             routing_header: source_routing_header,
@@ -173,6 +182,8 @@ impl TransmissionHandler {
         }
     }
 
+    /// Finds a new routing header for self.destination.
+    /// If no route is available, a new attempt will be made after self.backoff_time
     fn find_new_routing_header(&self) -> SourceRoutingHeader {
         loop {
             let hops = self.network_controller.get_path(self.destination);
@@ -191,6 +202,7 @@ impl TransmissionHandler {
 #[cfg(test)]
 mod tests {
     #![allow(unused_variables)]
+    #![allow(unused_mut)]
 
     use std::collections::HashMap;
     use crossbeam_channel::unbounded;
