@@ -55,19 +55,19 @@ impl NetworkController {
 
     /// Computes the path to a given node
     /// # Return
-    /// Return the path to a node if it exists, None otherwise
+    /// Return the optional path to a node
     pub fn get_path(&self, to: NodeId) -> Option<Vec<NodeId>> {
         self.network_graph.read().unwrap().get_path_to(to)
     }
 
-    /// Updates the known topology with the given FloodResponse
+    /// Updates the known topology with the given `FloodResponse`
     pub fn update_from_flood_response(&self, flood_response: &FloodResponse) {
         self.network_graph.read().unwrap().insert_edges_from_path_trace(&flood_response.path_trace);
 
         self.send_known_network_graph();
     }
 
-    /// Updates the topology information with the given Nack
+    /// Updates the topology information with the given `Nack`
     pub fn update_from_nack(&self, nack: &Nack, source: NodeId) {
         match nack.nack_type {
             NackType::ErrorInRouting(next_hop) => {
@@ -98,7 +98,7 @@ impl NetworkController {
         self.simulation_controller_notifier.send_event(event);
     }
 
-    /// Generates the EventNetworkGraph of the current topology
+    /// Generates the `EventNetworkGraph` of the current topology
     fn get_event_graph(&self) -> EventNetworkGraph {
         let mut nodes = vec![];
 
@@ -137,7 +137,7 @@ impl NetworkController {
         self.network_graph.read().unwrap().delete_bidirectional_edge(self.node_id, to);
     }
 
-    /// Increments the number of dropped packets of the given node_id
+    /// Increments the number of dropped packets of the given `node_id`
     pub fn increment_dropped_count(&self, node_id: NodeId) {
         self.network_graph.read().unwrap().increment_num_of_dropped_packets(node_id);
     }

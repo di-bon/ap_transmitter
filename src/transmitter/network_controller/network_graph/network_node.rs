@@ -57,7 +57,7 @@ impl NetworkNode {
         }
     }
 
-    /// Increments `self.num_of_dropped_packets` by 1
+    /// Increments `self.num_of_dropped_packets` by `1`
     pub fn increment_dropped_packets(&mut self) {
         self.num_of_dropped_packets += 1;
         log::info!("num_of_dropped_packets incremented");

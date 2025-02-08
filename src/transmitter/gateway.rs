@@ -80,7 +80,7 @@ impl Gateway {
         }
     }
 
-    /// Sends a FloodResponse to a neighbor after creating a SourceRoutingHeader from the path_trace information
+    /// Sends a `FloodResponse` to a neighbor after creating a `SourceRoutingHeader` from the `path_trace` information
     /// # Panics
     /// - Panics if the `path_trace` does not have a next hop to forward the response
     /// - Panics if there is no channel for the required next hop

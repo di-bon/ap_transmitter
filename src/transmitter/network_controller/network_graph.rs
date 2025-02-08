@@ -139,7 +139,7 @@ impl NetworkGraph {
         }
     }
 
-    /// Resets the NetworkGraph to contain just the NodeId and NodeType of the transmitter node
+    /// Resets the `NetworkGraph` to contain just the `NodeId` and `NodeType` of the transmitter node
     pub(super) fn reset_graph(&mut self) {
         let owner_node = NetworkNode::new(self.owner_node_id, self.owner_node_type);
         let owner_node = Arc::new(RwLock::new(owner_node));
@@ -147,9 +147,9 @@ impl NetworkGraph {
         log::info!("Network graph reset");
     }
 
-    /// Inserts a bidirectional edge between from and to
+    /// Inserts a bidirectional edge between `from` and `to`
     /// # Panics
-    /// Panics if there is no node with NodeId equal to from or to
+    /// Panics if there is no node with `NodeId` equal to `from` or `to`
     pub(super) fn insert_bidirectional_edge(&self, from: NodeId, to: NodeId) {
         let nodes = self.nodes.read().unwrap();
 
@@ -165,7 +165,7 @@ impl NetworkGraph {
         node_to.write().unwrap().insert_edge(from);
     }
 
-    /// Processes a path_trace, inserting the new nodes and connections not yet stored
+    /// Processes a `path_trace`, inserting the new nodes and connections not yet stored
     pub fn insert_edges_from_path_trace(&self, path_trace: &[(NodeId, NodeType)]) {
         log::info!("Processing FloodResponse's path_trace");
         for (node_id, node_type) in path_trace {
@@ -180,7 +180,7 @@ impl NetworkGraph {
         log::info!("FloodResponse's path_trace successfully processed");
     }
 
-    /// Deletes a bidirectional edge between from and to
+    /// Deletes a bidirectional edge between `from` and `to`
     pub(super) fn delete_bidirectional_edge(&self, from: NodeId, to: NodeId) {
         let nodes = self.nodes.read().unwrap();
         let node_from = nodes
@@ -198,7 +198,7 @@ impl NetworkGraph {
         }
     }
 
-    /// Increments the number of dropped packets for the given node_id
+    /// Increments the number of dropped packets for the given `node_id`
     pub(super) fn increment_num_of_dropped_packets(&self, node_id: NodeId) {
         use wg_2024::packet::NackType;
 
@@ -223,7 +223,7 @@ impl NetworkGraph {
     }
 
     /// # Returns
-    /// Returns the optional number of dropped packets for the given node_id
+    /// Returns the optional number of dropped packets for the given `node_id`
     pub fn get_num_of_dropped_packets(&self, node_id: NodeId) -> Option<u64> {
         let borrow = self.nodes.read().unwrap();
         let faulty_node = borrow

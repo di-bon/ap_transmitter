@@ -106,8 +106,8 @@ impl Transmitter {
 
     /// Starts the `Transmitter`, allowing it to process any message sent to it
     /// # Panics
-    /// - Panics if the transmitter end of one of the Receiver channels gets unexpectedly dropped
-    /// - Panics if an unsupported DroneCommand is received
+    /// - Panics if the transmitter end of one of the `Receiver` channels gets unexpectedly dropped
+    /// - Panics if an unsupported `DroneCommand` is received
     pub fn run(&mut self) {
         panic::set_hook(Box::new(|info| {
             let panic_msg = format!("Panic occurred: {info}");
@@ -187,7 +187,7 @@ impl Transmitter {
     /// Floods the network if the last flooding was done at least `self.flood_interval` time ago
     /// Note: the previous known network gets deleted
     /// # Panics
-    /// Panics if SystemTime::elapsed(&self) fails
+    /// Panics if `SystemTime::elapsed(&self)` fails
     fn flood_if_enough_time_elapsed(&mut self) {
         match self.last_flood_timestamp.elapsed() {
             Ok(elapsed) => {
@@ -232,8 +232,8 @@ impl Transmitter {
 
     /// Processes a `TransmitterInternalCommand` received from `Gateway`
     /// # Panics
-    /// - Panics if a PacketCommand different from PacketCommand::SendNack is received
-    /// - Panics if PacketCommand::SendNack contains a NACK type different from NackType::ErrorInRouting(_) or NackType::UnexpectedRecipient(_)
+    /// - Panics if a `PacketCommand` different from `PacketCommand::SendNack` is received
+    /// - Panics if `PacketCommand::SendNack` contains a NACK type different from `NackType::ErrorInRouting` or `NackType::UnexpectedRecipient`
     fn process_gateway_command(&self, command: PacketCommand) {
         if let PacketCommand::SendNack { session_id: _session_id, nack, destination: _destination } = &command {
             match &nack.nack_type {
@@ -251,7 +251,7 @@ impl Transmitter {
 
     /// Sends a `TransmissionHandlerCommand` to the `TransmissionHandler` associated to the given `session_id`
     /// # Panics
-    /// Panics if the communication to the required TransmissionHandler fails
+    /// Panics if the communication to the required `TransmissionHandler` fails
     fn send_transmission_handler_command(&self, session_id: u64, command: TransmissionHandlerCommand, source: NodeId) {
         let Some(handler_channel) = self.transmission_handlers.get(&session_id)
         else {
@@ -303,7 +303,7 @@ impl Transmitter {
         }
     }
 
-    /// Spawns a SinglePacketTransmissionHandler for the PacketType argument
+    /// Spawns a `SinglePacketTransmissionHandler` for the `PacketType` argument
     /// # Panic
     /// Panics if a new thread cannot be spawned
     fn spawn_single_packet_transmission_handler_thread(&self, session_id: u64, destination: NodeId, packet_type: PacketType) {
@@ -323,7 +323,7 @@ impl Transmitter {
             .unwrap_or_else(|_| panic!("Cannot create 'transmission_handler_{session_id}' thread"));
     }
 
-    /// Processes a `FloodRequest`, sending a `FloodResponse` back to the initiator
+    /// Processes a `FloodRequest`, sending a `FloodResponse` back to `initiator`
     fn process_flood_request(&self, flood_request: FloodRequest) {
         // check if, by any chance, the flood request initiator is self.node_id
         // if so, just ignore the flood request
