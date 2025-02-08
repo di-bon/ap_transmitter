@@ -16,6 +16,7 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::{
     Ack, FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType,
 };
+use crate::PacketCommand;
 
 mod gateway;
 mod network_controller;
@@ -50,32 +51,6 @@ impl PartialEq for Transmitter {
                 .eq(other.transmission_handlers.keys())
             && self.gateway.eq(&other.gateway)
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PacketCommand {
-    SendAckFor {
-        session_id: u64,
-        fragment_index: u64,
-        destination: NodeId,
-    },
-    ForwardAckTo {
-        session_id: u64,
-        ack: Ack,
-        source: NodeId,
-    },
-    ProcessNack {
-        session_id: u64,
-        nack: Nack,
-        source: NodeId,
-    },
-    ProcessFloodRequest(FloodRequest),
-    ProcessFloodResponse(FloodResponse),
-    SendNack {
-        session_id: u64,
-        nack: Nack,
-        destination: NodeId,
-    },
 }
 
 #[derive(Debug, Clone)]
