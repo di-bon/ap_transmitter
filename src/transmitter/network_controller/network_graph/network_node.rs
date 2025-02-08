@@ -62,17 +62,6 @@ impl NetworkNode {
         self.num_of_dropped_packets += 1;
         log::info!("num_of_dropped_packets incremented");
     }
-
-    /// Sets `self.num_of_dropped_packets` to `0`
-    pub fn reset_num_of_dropped_packets(&mut self) {
-        self.num_of_dropped_packets = 0;
-        log::info!("num_of_dropped_packets reset to 0");
-    }
-
-    /// Returns the value of `self.num_of_dropped_packets`
-    pub fn get_num_of_dropped_packets(&self) -> u64 {
-        self.num_of_dropped_packets
-    }
 }
 
 #[cfg(test)]
@@ -157,12 +146,6 @@ mod tests {
 
         let expected = 3;
 
-        assert_eq!(node.get_num_of_dropped_packets(), expected);
-
-        node.reset_num_of_dropped_packets();
-
-        let expected = 0;
-
-        assert_eq!(node.get_num_of_dropped_packets(), expected);
+        assert_eq!(node.num_of_dropped_packets, expected);
     }
 }

@@ -76,71 +76,6 @@ impl NetworkGraph {
         }
     }
 
-    // TODO: refactor this
-    fn remove_node_from_neighbors(&self, remove_connections_from: NodeId) {
-        let nodes_binding = self.nodes.read().unwrap();
-        let Some(node_to_be_removed) = nodes_binding
-            .iter()
-            .find(|node| node.read().unwrap().node_id == remove_connections_from)
-        else {
-            panic!("Cannot find node with NodeId {remove_connections_from}");
-        };
-
-        for neighbor_id in node_to_be_removed
-            .read()
-            .unwrap()
-            .neighbors
-            .read()
-            .unwrap()
-            .iter()
-        {
-            let Some(neighbor) = nodes_binding
-                .iter()
-                .find(|node| node.read().unwrap().node_id == *neighbor_id)
-            else {
-                // continue?
-                continue;
-            };
-
-            let Some(index) = neighbor
-                .read()
-                .unwrap()
-                .neighbors
-                .write()
-                .unwrap()
-                .iter()
-                .position(|node_id| *node_id == remove_connections_from)
-            else {
-                panic!("Node not found")
-            };
-
-            neighbor
-                .read()
-                .unwrap()
-                .neighbors
-                .write()
-                .unwrap()
-                .remove(index);
-        }
-    }
-
-    /// Deletes a node from `NetworkGraph`
-    pub fn delete_node(&self, node_id: NodeId) {
-        let index = self
-            .nodes
-            .read()
-            .unwrap()
-            .iter()
-            .position(|x| x.read().unwrap().node_id == node_id);
-        if let Some(index) = index {
-            self.remove_node_from_neighbors(node_id);
-            self.nodes.write().unwrap().remove(index);
-            log::info!("Deleted node with NodeId {node_id}");
-        } else {
-            log::warn!("No node with NodeId {node_id} to be deleted");
-        }
-    }
-
     /// Resets the `NetworkGraph` to contain just the `NodeId` and `NodeType` of the transmitter node
     pub(super) fn reset_graph(&mut self) {
         let owner_node = NetworkNode::new(self.owner_node_id, self.owner_node_type);
@@ -221,25 +156,6 @@ impl NetworkGraph {
                 // graph and flooding it again
                 log::info!("Ignoring old {:?}: graph has been reset", NackType::Dropped);
             }
-        }
-    }
-
-    /// # Returns
-    /// Returns the optional number of dropped packets for the given `node_id`
-    pub fn get_num_of_dropped_packets(&self, node_id: NodeId) -> Option<u64> {
-        let borrow = self.nodes.read().unwrap();
-        let faulty_node = borrow
-            .iter()
-            .find(|node| node.read().unwrap().node_id == node_id);
-
-        if let Some(node) = faulty_node {
-            Some(node.write().unwrap().get_num_of_dropped_packets())
-        } else {
-            // just ignore this case?
-            // It may arise when an old Nack::Dropped is received after resetting the
-            // graph and flooding it again
-            log::info!("No node with NodeId {node_id}");
-            None
         }
     }
 
@@ -752,42 +668,6 @@ mod tests {
             owner_node_id: node_id,
             owner_node_type: node_type,
             nodes,
-        };
-
-        assert_eq!(graph, expected);
-    }
-
-    #[test]
-    fn check_delete_node() {
-        let node_id = 0;
-        let node_type = NodeType::Server;
-        let mut graph = NetworkGraph::new(node_id, node_type);
-
-        let flood_response = FloodResponse {
-            flood_id: 0,
-            path_trace: vec![
-                (node_id, node_type),
-                (1, NodeType::Drone),
-                (2, NodeType::Drone),
-                (3, NodeType::Drone),
-                (4, NodeType::Client),
-            ],
-        };
-
-        graph.insert_edges_from_path_trace(&flood_response.path_trace);
-        graph.delete_node(1);
-        graph.delete_node(3);
-        graph.delete_node(20);
-
-        let nodes = vec![
-            create_arc_rwlock_node(node_id, node_type),
-            create_arc_rwlock_node(2, NodeType::Drone),
-            create_arc_rwlock_node(4, NodeType::Client),
-        ];
-        let expected = NetworkGraph {
-            owner_node_id: node_id,
-            owner_node_type: node_type,
-            nodes: RwLock::new(nodes),
         };
 
         assert_eq!(graph, expected);
