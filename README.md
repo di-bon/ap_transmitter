@@ -1,5 +1,5 @@
-# Listener
-This repo contains the code for the Listener for the Advanced Programming course help at the University of Trento in the academic year 2024/2025.
+# Transmitter
+This repo contains the code for the Transmitter for the Advanced Programming course help at the University of Trento in the academic year 2024/2025.
 
 ## Description
 The Transmitter will handle the transmission of Packets to the neighboring drones.
