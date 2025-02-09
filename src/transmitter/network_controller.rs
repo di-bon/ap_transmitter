@@ -4,7 +4,9 @@ use crate::transmitter::gateway::Gateway;
 use crate::transmitter::network_controller::network_graph::NetworkGraph;
 use ap_sc_notifier::SimulationControllerNotifier;
 use messages::node_event::{EventNetworkGraph, EventNetworkNode, NodeEvent};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc,
+                // Mutex,
+                RwLock};
 use rand::RngCore;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType};
