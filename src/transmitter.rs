@@ -231,6 +231,8 @@ impl Transmitter {
                     log::info!("Flooding the network");
                     self.last_flood_timestamp = SystemTime::now();
                     self.network_controller.flood_network();
+                } else {
+                    log::info!("Won't flood again, not enough time has elapsed");
                 }
             }
             Err(err) => {
