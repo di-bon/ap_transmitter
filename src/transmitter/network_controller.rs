@@ -4,8 +4,7 @@ use crate::transmitter::gateway::Gateway;
 use crate::transmitter::network_controller::network_graph::NetworkGraph;
 use ap_sc_notifier::SimulationControllerNotifier;
 use messages::node_event::{EventNetworkGraph, EventNetworkNode, NodeEvent};
-use rand::Rng;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType};
 
@@ -16,6 +15,7 @@ pub struct NetworkController {
     network_graph: RwLock<NetworkGraph>,
     gateway: Arc<Gateway>, // gateway reference used to send all the FloodRequests
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
+    flood_id: Mutex<u64>,
 }
 
 impl PartialEq for NetworkController {
@@ -43,14 +43,15 @@ impl NetworkController {
             network_graph: RwLock::new(NetworkGraph::new(node_id, node_type)),
             gateway,
             simulation_controller_notifier,
+            flood_id: Mutex::new(0),
         }
     }
 
     /// Floods the network with `FloodRequest`s
     pub fn flood_network(&self) {
-        let mut rng = rand::rng();
-        let _session_id: u64 = rng.random(); // TODO: decide if this is needed
-        let flood_id: u64 = rng.random(); // TODO: change this to sequentially generated id's
+        let mut guard = self.flood_id.lock().unwrap();
+        let flood_id = *guard;
+        *guard += 1;
 
         let flood_request = FloodRequest::initialize(flood_id, self.node_id, self.node_type);
 
@@ -176,6 +177,7 @@ mod tests {
     use wg_2024::network::SourceRoutingHeader;
     use wg_2024::packet::{Nack, Packet, PacketType};
 
+    #[timeout(2000)]
     #[test]
     fn initialize() {
         let node_id = 0;
@@ -209,6 +211,7 @@ mod tests {
             network_graph: RwLock::new(NetworkGraph::new(node_id, node_type)),
             gateway: gateway.clone(),
             simulation_controller_notifier,
+            flood_id: Mutex::new(0),
         };
 
         assert_eq!(network_controller, expected);
@@ -302,6 +305,7 @@ mod tests {
         assert_eq!(hops, expected);
     }
 
+    #[timeout(2000)]
     #[test]
     fn update_from_dropped() {
         let node_id = 0;
@@ -439,6 +443,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(2000)]
     fn reset_graph_from_flood() {
         let node_id = 0;
         let node_type = NodeType::Server;
