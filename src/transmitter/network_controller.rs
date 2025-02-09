@@ -141,6 +141,11 @@ impl NetworkController {
 
     /// Inserts a new neighbor to the current node in the known topology
     pub fn insert_neighbor(&self, to: NodeId) {
+        self.network_graph.
+            read()
+            .unwrap()
+            .insert_node_if_not_present(to, NodeType::Drone);
+
         self.network_graph
             .read()
             .unwrap()
