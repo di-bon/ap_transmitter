@@ -61,7 +61,7 @@ impl NetworkGraph {
     }
 
     /// Inserts a new node with into `NetworkGraph` if there is no node with the required `node_id: NodeId`
-    fn insert_node_if_not_present(&self, node_id: NodeId, node_type: NodeType) {
+    pub(super) fn insert_node_if_not_present(&self, node_id: NodeId, node_type: NodeType) {
         let insert_node = {
             let nodes = self.nodes.read().unwrap();
             !nodes

@@ -144,6 +144,11 @@ impl NetworkController {
         self.network_graph
             .read()
             .unwrap()
+            .insert_node_if_not_present(to, NodeType::Drone);
+
+        self.network_graph
+            .read()
+            .unwrap()
             .insert_bidirectional_edge(self.node_id, to);
     }
 
