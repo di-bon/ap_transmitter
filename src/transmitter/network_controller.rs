@@ -5,6 +5,7 @@ use crate::transmitter::network_controller::network_graph::NetworkGraph;
 use ap_sc_notifier::SimulationControllerNotifier;
 use messages::node_event::{EventNetworkGraph, EventNetworkNode, NodeEvent};
 use std::sync::{Arc, Mutex, RwLock};
+use rand::RngCore;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType};
 
@@ -15,7 +16,7 @@ pub struct NetworkController {
     network_graph: RwLock<NetworkGraph>,
     gateway: Arc<Gateway>, // gateway reference used to send all the FloodRequests
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
-    flood_id: Mutex<u64>,
+    // flood_id: Mutex<u64>,
 }
 
 impl PartialEq for NetworkController {
@@ -43,15 +44,20 @@ impl NetworkController {
             network_graph: RwLock::new(NetworkGraph::new(node_id, node_type)),
             gateway,
             simulation_controller_notifier,
-            flood_id: Mutex::new(0),
+            // flood_id: Mutex::new(0),
         }
     }
 
     /// Floods the network with `FloodRequest`s
     pub fn flood_network(&self) {
+        /*
         let mut guard = self.flood_id.lock().unwrap();
         let flood_id = *guard;
         *guard += 1;
+         */
+
+        let mut rng = rand::rng();
+        let flood_id = rng.next_u64();
 
         let flood_request = FloodRequest::initialize(flood_id, self.node_id, self.node_type);
 
@@ -216,7 +222,7 @@ mod tests {
             network_graph: RwLock::new(NetworkGraph::new(node_id, node_type)),
             gateway: gateway.clone(),
             simulation_controller_notifier,
-            flood_id: Mutex::new(0),
+            // flood_id: Mutex::new(0),
         };
 
         assert_eq!(network_controller, expected);
