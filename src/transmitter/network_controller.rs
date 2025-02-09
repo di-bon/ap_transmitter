@@ -190,8 +190,8 @@ mod tests {
     use wg_2024::network::SourceRoutingHeader;
     use wg_2024::packet::{Nack, Packet, PacketType};
 
-    #[timeout(2000)]
     #[test]
+    #[timeout(2000)]
     fn initialize() {
         let node_id = 0;
         let node_type = NodeType::Server;
@@ -318,8 +318,8 @@ mod tests {
         assert_eq!(hops, expected);
     }
 
-    #[timeout(2000)]
     #[test]
+    #[timeout(2000)]
     fn update_from_dropped() {
         let node_id = 0;
         let node_type = NodeType::Server;
@@ -521,101 +521,54 @@ mod tests {
         );
     }
 
-    /*
     #[test]
-    #[should_panic(expected = "Received a NACK packet with no source in header")]
-    fn error_in_routing_with_no_header() {
+    #[timeout(2000)]
+    fn add_and_remove_neighbor() {
         let node_id = 0;
         let node_type = NodeType::Server;
 
-        let connected_drones = HashMap::new();
-        let (gateway_to_listener_tx, gateway_to_listener_rx) = unbounded::<Packet>();
-
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
+        let simulation_controller_notifier =
+            SimulationControllerNotifier::new(simulation_controller_tx);
         let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
 
-        let gateway = Gateway::new(node_id, connected_drones, gateway_to_listener_tx, simulation_controller_notifier.clone());
+        let (gateway_to_transmitter_tx, gateway_to_transmitter_rx) = unbounded();
+
+        let gateway = Gateway::new(
+            node_id,
+            HashMap::new(),
+            gateway_to_transmitter_tx,
+            simulation_controller_notifier.clone(),
+        );
         let gateway = Arc::new(gateway);
 
-        let network_controller = NetworkController::new(node_id, node_type, gateway, simulation_controller_notifier.clone());
+        let mut network_controller = NetworkController::new(
+            node_id,
+            node_type,
+            gateway,
+            simulation_controller_notifier.clone(),
+        );
 
-        let nack = Nack {
-            fragment_index: 0,
-            nack_type: NackType::ErrorInRouting(10),
-        };
-        // let nack = Packet {
-        //     routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
-        //     session_id: 0,
-        //     pack_type: PacketType::Nack(nack),
-        // };
+        let inserted_node_id = 10;
+        network_controller.insert_neighbor(inserted_node_id);
 
-        network_controller.update_from_nack(&nack, 0);
+        let binding = network_controller
+            .network_graph
+            .read()
+            .unwrap();
+
+        let binding = binding
+            .nodes
+            .read()
+            .unwrap();
+
+        let neighbor = binding
+            .iter()
+            .find(|node| node.read().unwrap().node_id == inserted_node_id);
+        assert!(neighbor.is_some());
+
+        network_controller.delete_neighbor_edge(inserted_node_id);
+
+        assert!(network_controller.get_path(inserted_node_id).is_none());
     }
-     */
-
-    /*
-    #[test]
-    #[should_panic(expected = "Received a packet with no hops in routing header")]
-    fn dropped_with_no_header() {
-        let node_id = 0;
-        let node_type = NodeType::Server;
-
-        let connected_drones = HashMap::new();
-        let (gateway_to_listener_tx, gateway_to_listener_rx) = unbounded::<Packet>();
-
-        let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
-        let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
-
-        let gateway = Gateway::new(node_id, connected_drones, gateway_to_listener_tx, simulation_controller_notifier.clone());
-        let gateway = Arc::new(gateway);
-
-        let network_controller = NetworkController::new(node_id, node_type, gateway, simulation_controller_notifier.clone());
-
-        let nack = Nack {
-            fragment_index: 0,
-            nack_type: NackType::Dropped,
-        };
-        let nack = Packet {
-            routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
-            session_id: 0,
-            pack_type: PacketType::Nack(nack),
-        };
-
-        network_controller.update_from_nack(&nack);
-    }
-     */
-
-    /*
-    #[test]
-    #[should_panic(expected = "Expected nack packet!")]
-    fn update_from_nack_wrong_packet_type() {
-        let node_id = 0;
-        let node_type = NodeType::Server;
-
-        let connected_drones = HashMap::new();
-        let (gateway_to_listener_tx, gateway_to_listener_rx) = unbounded::<Packet>();
-
-        let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier = SimulationControllerNotifier::new(simulation_controller_tx);
-        let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
-
-        let gateway = Gateway::new(node_id, connected_drones, gateway_to_listener_tx, simulation_controller_notifier.clone());
-        let gateway = Arc::new(gateway);
-
-        let network_controller = NetworkController::new(node_id, node_type, gateway, simulation_controller_notifier.clone());
-
-        let ack = Ack {
-            fragment_index: 0,
-        };
-        let ack = Packet {
-            routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
-            session_id: 0,
-            pack_type: PacketType::Ack(ack),
-        };
-
-        network_controller.update_from_nack(&ack);
-    }
-     */
 }
