@@ -228,8 +228,11 @@ impl Transmitter {
         match self.last_flood_timestamp.elapsed() {
             Ok(elapsed) => {
                 if elapsed >= self.flood_interval {
+                    log::info!("Flooding the network");
                     self.last_flood_timestamp = SystemTime::now();
                     self.network_controller.flood_network();
+                } else {
+                    log::info!("Won't flood again, not enough time has elapsed");
                 }
             }
             Err(err) => {
