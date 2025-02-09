@@ -25,6 +25,7 @@ mod transmission_handler;
 #[derive(Debug)]
 pub struct Transmitter {
     node_id: NodeId,
+    node_type: NodeType,
     listener_to_transmitter_rx: Receiver<PacketCommand>,
     gateway_to_transmitter_rx: Receiver<PacketCommand>,
     logic_to_transmitter_rx: Receiver<Message>,
@@ -111,6 +112,7 @@ impl Transmitter {
 
         Self {
             node_id,
+            node_type,
             listener_to_transmitter_rx: listener_rx,
             gateway_to_transmitter_rx,
             logic_to_transmitter_rx: server_logic_rx,
@@ -408,7 +410,7 @@ impl Transmitter {
 
         // if a valid flood request is received, send a flood_response
         let mut path_trace = flood_request.path_trace;
-        path_trace.push((self.node_id, NodeType::Server));
+        path_trace.push((self.node_id, self.node_type));
         path_trace.reverse();
         let flood_response = FloodResponse {
             flood_id: flood_request.flood_id,
@@ -577,6 +579,7 @@ mod tests {
 
         let expected = Transmitter {
             node_id,
+            node_type,
             listener_to_transmitter_rx: listener_rx,
             gateway_to_transmitter_rx,
             logic_to_transmitter_rx: server_logic_rx,
