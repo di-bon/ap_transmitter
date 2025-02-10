@@ -102,7 +102,7 @@ impl TransmissionHandler {
                         self.dropped_count += 1;
                         if self.dropped_count >= DROPPED_NUM_TO_UPDATE_HEADER {
                             self.dropped_count = 0;
-                            self.process_update_header_command(&mut source_routing_header)
+                            self.process_update_header_command(&mut source_routing_header);
                         }
                         self.process_resend_command(fragment_index, &source_routing_header);
                     }
