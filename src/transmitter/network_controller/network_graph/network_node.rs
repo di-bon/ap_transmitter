@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::RwLock;
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType;
@@ -7,7 +8,7 @@ pub struct NetworkNode {
     pub node_id: NodeId,
     pub node_type: NodeType,
     pub num_of_dropped_packets: u64,
-    pub neighbors: RwLock<Vec<NodeId>>,
+    pub neighbors: RwLock<HashSet<NodeId>>,
 }
 
 impl PartialEq for NetworkNode {
@@ -31,30 +32,19 @@ impl NetworkNode {
             node_id,
             node_type,
             num_of_dropped_packets: 0,
-            neighbors: RwLock::new(vec![]),
+            neighbors: RwLock::new(HashSet::new()),
         }
     }
 
     /// Inserts an edge from the current `NetworkNode` to the given `NodeId`
     pub fn insert_edge(&self, to: NodeId) {
-        self.neighbors.write().unwrap().push(to);
+        self.neighbors.write().unwrap().insert(to);
         log::info!("Inserted edge from {} to {to}", self.node_id);
     }
 
     /// Removes an edge from the current `NetworkNode` to the given `NodeId`
     pub fn remove_edge(&self, to: NodeId) {
-        let index = self
-            .neighbors
-            .read()
-            .unwrap()
-            .iter()
-            .position(|node_id| *node_id == to);
-        if let Some(index) = index {
-            self.neighbors.write().unwrap().remove(index);
-            log::info!("Removed edge from {} to {to}", self.node_id);
-        } else {
-            log::warn!("No edge to be removed from {} to {to}", self.node_id);
-        }
+        self.neighbors.write().unwrap().remove(&to);
     }
 
     /// Increments `self.num_of_dropped_packets` by `1`
@@ -81,7 +71,7 @@ mod tests {
             node_id,
             node_type,
             num_of_dropped_packets: 0,
-            neighbors: RwLock::new(vec![]),
+            neighbors: RwLock::new(HashSet::new()),
         };
 
         assert_eq!(node, expected);
@@ -95,11 +85,13 @@ mod tests {
 
         node.insert_edge(1);
 
+        let mut neigh = HashSet::new();
+        neigh.insert(1);
         let expected = NetworkNode {
             node_id,
             node_type,
             num_of_dropped_packets: 0,
-            neighbors: RwLock::new(vec![1]),
+            neighbors: RwLock::new(neigh),
         };
 
         assert_eq!(node, expected);
@@ -113,11 +105,13 @@ mod tests {
 
         node.insert_edge(1);
 
+        let mut neigh = HashSet::new();
+        neigh.insert(1);
         let expected = NetworkNode {
             node_id,
             node_type,
             num_of_dropped_packets: 0,
-            neighbors: RwLock::new(vec![1]),
+            neighbors: RwLock::new(neigh),
         };
 
         assert_eq!(node, expected);
@@ -128,7 +122,7 @@ mod tests {
             node_id,
             node_type,
             num_of_dropped_packets: 0,
-            neighbors: RwLock::new(vec![]),
+            neighbors: RwLock::new(HashSet::new()),
         };
 
         assert_eq!(node, expected);

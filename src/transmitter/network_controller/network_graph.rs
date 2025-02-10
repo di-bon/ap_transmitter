@@ -424,14 +424,14 @@ mod tests {
             .neighbors
             .write()
             .unwrap()
-            .push(1);
-        node_1.write().unwrap().neighbors.write().unwrap().push(0);
-        node_1.write().unwrap().neighbors.write().unwrap().push(2);
-        node_2.write().unwrap().neighbors.write().unwrap().push(1);
-        node_2.write().unwrap().neighbors.write().unwrap().push(3);
-        node_3.write().unwrap().neighbors.write().unwrap().push(2);
-        node_3.write().unwrap().neighbors.write().unwrap().push(4);
-        node_4.write().unwrap().neighbors.write().unwrap().push(3);
+            .insert(1);
+        node_1.write().unwrap().neighbors.write().unwrap().insert(0);
+        node_1.write().unwrap().neighbors.write().unwrap().insert(2);
+        node_2.write().unwrap().neighbors.write().unwrap().insert(1);
+        node_2.write().unwrap().neighbors.write().unwrap().insert(3);
+        node_3.write().unwrap().neighbors.write().unwrap().insert(2);
+        node_3.write().unwrap().neighbors.write().unwrap().insert(4);
+        node_4.write().unwrap().neighbors.write().unwrap().insert(3);
 
         let expected = NetworkGraph {
             owner_node_id: node_id,
@@ -481,7 +481,7 @@ mod tests {
             .neighbors
             .write()
             .unwrap()
-            .push(2);
+            .insert(2);
 
         let expected_2 = create_arc_rwlock_node(2, NodeType::Drone);
         expected_2
@@ -490,7 +490,7 @@ mod tests {
             .neighbors
             .write()
             .unwrap()
-            .push(1);
+            .insert(1);
 
         assert_eq!(&*node_1.read().unwrap(), &*expected_1.read().unwrap());
         assert_eq!(&*node_2.read().unwrap(), &*expected_2.read().unwrap());
@@ -529,7 +529,7 @@ mod tests {
             .neighbors
             .write()
             .unwrap()
-            .push(2);
+            .insert(2);
 
         let expected_2 = create_arc_rwlock_node(2, NodeType::Drone);
         expected_2
@@ -538,7 +538,7 @@ mod tests {
             .neighbors
             .write()
             .unwrap()
-            .push(1);
+            .insert(1);
 
         assert_eq!(&*node_1.read().unwrap(), &*expected_1.read().unwrap());
         assert_eq!(&*node_2.read().unwrap(), &*expected_2.read().unwrap());
@@ -641,7 +641,7 @@ mod tests {
             .neighbors
             .write()
             .unwrap()
-            .push(1);
+            .insert(1);
         let drone_1 = create_arc_rwlock_node(1, NodeType::Drone);
         drone_1
             .write()
@@ -649,7 +649,7 @@ mod tests {
             .neighbors
             .write()
             .unwrap()
-            .push(node_id);
+            .insert(node_id);
         let nodes = RwLock::new(vec![owner_node, drone_1]);
         let expected = NetworkGraph {
             owner_node_id: node_id,
