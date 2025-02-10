@@ -13,6 +13,8 @@ use std::time::{Duration, SystemTime};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Packet, PacketType};
 
+const DROPPED_NUM_TO_UPDATE_HEADER: usize = 200;
+
 /// A `TransmissionHandler` struct that will transmit a `Message`, fragmenting it into `Fragment`s,
 /// creating the required `Packet`s and sending them via the `Gateway`
 pub struct TransmissionHandler {
@@ -28,6 +30,7 @@ pub struct TransmissionHandler {
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
     backoff_time: Duration, // the time to wait before trying again to find a new SourceRoutingHeader if the previous time there was no known path
     last_header_update_time: SystemTime,
+    dropped_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +72,7 @@ impl TransmissionHandler {
             simulation_controller_notifier,
             backoff_time,
             last_header_update_time: SystemTime::UNIX_EPOCH, // Set last update to 1970-01-01 00:00:00 UTC to make sure that the header will be updated on the first Command::UpdateHeader received
+            dropped_count: 0,
         }
     }
 
@@ -95,7 +99,12 @@ impl TransmissionHandler {
                 log::info!("Received command {command:?}");
                 match command {
                     Command::Resend(fragment_index) => {
-                        self.process_resend_command(fragment_index, &mut source_routing_header);
+                        self.dropped_count += 1;
+                        if self.dropped_count >= DROPPED_NUM_TO_UPDATE_HEADER {
+                            self.dropped_count = 0;
+                            self.process_update_header_command(&mut source_routing_header)
+                        }
+                        self.process_resend_command(fragment_index, &source_routing_header);
                     }
                     Command::Confirmed(fragment_index) => {
                         if self.process_confirmed_command(fragment_index) {
@@ -129,7 +138,7 @@ impl TransmissionHandler {
     fn process_resend_command(
         &self,
         fragment_index: u64,
-        source_routing_header: &mut SourceRoutingHeader,
+        source_routing_header: &SourceRoutingHeader,
     ) {
         #[allow(clippy::cast_possible_truncation)]
         let fragment = self.fragments.get(fragment_index as usize);
